@@ -16,7 +16,8 @@ from .layers import (
 # Import activations
 from .activations import (
     ReLU,
-    Sigmoid
+    Sigmoid,
+    Tanh
 )
 
 # Import loss functions
@@ -38,7 +39,7 @@ from .model import Model
 __all__ = [
     'F',
     'Layer', 'Linear', 'Conv2D', 'MaxPool2D', 'BatchNorm2D', 'Sequential',
-    'ReLU', 'Sigmoid',
+    'ReLU', 'Sigmoid', 'Tanh',
     'MSELoss', 'CrossEntropyLoss', 'BCELoss', 'L1Loss', 'HuberLoss', 
     'SmoothL1Loss', 'KLDivLoss', 'get_loss_function',
     'Model'
