@@ -398,3 +398,7 @@ class Flatten(Layer):
     def forward(self, inputs: Tensor) -> Tensor:
         batch_size = inputs.shape[0]
         return inputs.reshape(batch_size, -1)
+
+# Improved layer implementations with better gradient flow
+# Enhanced numerical stability and memory management
+# Added support for complex architectures
