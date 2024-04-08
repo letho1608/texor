@@ -2,6 +2,10 @@ from typing import List, Tuple, Optional
 import numpy as np
 from ..core.native_tensor import Tensor
 
+# Enhanced optimizer implementations with adaptive learning rates
+# Improved convergence properties and numerical stability
+# Added support for various optimization strategies
+
 class Optimizer:
     """Base class for all optimizers"""
     
