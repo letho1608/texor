@@ -15,12 +15,12 @@
 ## Recent Updates
 
 ### Version 1.0.0 (Latest)
-- ✅ **32/32 tests passing** - Complete test coverage
-- ✅ **Enhanced activation functions** - Added Tanh, improved Sigmoid
-- ✅ **Optimized loss functions** - Better gradient flow and numerical stability
-- ✅ **Improved optimizers** - Enhanced convergence properties
-- ✅ **Enhanced CLI** - Better user experience and error handling
-- ✅ **Performance optimizations** - Faster tensor operations and memory management
+-  **32/32 tests passing** - Complete test coverage
+-  **Enhanced activation functions** - Added Tanh, improved Sigmoid
+-  **Optimized loss functions** - Better gradient flow and numerical stability
+-  **Improved optimizers** - Enhanced convergence properties
+-  **Enhanced CLI** - Better user experience and error handling
+-  **Performance optimizations** - Faster tensor operations and memory management
 
 ## Architecture
 
