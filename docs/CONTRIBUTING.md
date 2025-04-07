@@ -1,6 +1,6 @@
-# Contributing to Nexor
+# Contributing to Texor
 
-We love your input! We want to make contributing to Nexor as easy and transparent as possible, whether it's:
+We love your input! We want to make contributing to Texor as easy and transparent as possible, whether it's:
 
 - Reporting a bug
 - Discussing the current state of the code
@@ -70,7 +70,7 @@ mypy .
 pytest
 
 # Run with coverage report
-pytest --cov=nexor tests/
+pytest --cov=texor tests/
 
 # Run specific test file
 pytest tests/test_tensor.py
@@ -94,10 +94,6 @@ make html
 ## Any contributions you make will be under the MIT Software License
 
 In short, when you submit code changes, your submissions are understood to be under the same [MIT License](http://choosealicense.com/licenses/mit/) that covers the project. Feel free to contact the maintainers if that's a concern.
-
-## Report bugs using GitHub's [issue tracker](https://github.com/nexor-ai/nexor/issues)
-
-We use GitHub issues to track public bugs. Report a bug by [opening a new issue](https://github.com/nexor-ai/nexor/issues/new).
 
 ## Write bug reports with detail, background, and sample code
 
