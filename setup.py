@@ -4,14 +4,14 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="nexor",
+    name="texor",
     version="0.1.0",
     author="letho1608",
     author_email="letho16082003@gmail.com",
     description="A ai library combining the best of TensorFlow and PyTorch",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/letho1608/nexor",
+    url="https://github.com/letho1608/texor",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",

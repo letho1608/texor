@@ -1,6 +1,6 @@
-# Nexor AI Library
+# Texor AI Library
 
-Nexor là một thư viện AI mạnh mẽ kết hợp những tính năng tốt nhất của TensorFlow và PyTorch. Thư viện cung cấp API cao cấp, dễ sử dụng trong khi vẫn duy trì tính linh hoạt và hiệu suất thông qua hệ thống backend lai.
+Texor là một thư viện AI mạnh mẽ kết hợp những tính năng tốt nhất của TensorFlow và PyTorch. Thư viện cung cấp API cao cấp, dễ sử dụng trong khi vẫn duy trì tính linh hoạt và hiệu suất thông qua hệ thống backend lai.
 
 ## Tính Năng Chính
 
@@ -11,7 +11,7 @@ Nexor là một thư viện AI mạnh mẽ kết hợp những tính năng tốt
 
 ### 2. Core API
 ```python
-from nexor.core import Tensor
+from texor.core import Tensor
 
 # Tạo tensor từ nhiều nguồn khác nhau
 x = Tensor([[1, 2], [3, 4]])  # Từ Python list
@@ -27,7 +27,7 @@ torch_data = x.pytorch()
 
 ### 3. Neural Network Layers
 ```python
-from nexor.nn import Sequential, Linear, Conv2D, MaxPool2D, ReLU, Dropout
+from texor.nn import Sequential, Linear, Conv2D, MaxPool2D, ReLU, Dropout
 
 model = Sequential([
     Conv2D(in_channels=1, out_channels=32, kernel_size=3),
@@ -42,7 +42,7 @@ model = Sequential([
 
 ### 4. Optimizers
 ```python
-from nexor.optim import SGD, Adam, RMSprop
+from texor.optim import SGD, Adam, RMSprop
 
 # Tạo optimizer
 optimizer = Adam(model.parameters(), lr=0.001)
@@ -51,7 +51,7 @@ optimizer = SGD(model.parameters(), lr=0.01, momentum=0.9)
 
 ### 5. Loss Functions
 ```python
-from nexor.nn import MSELoss, CrossEntropyLoss, BCELoss
+from texor.nn import MSELoss, CrossEntropyLoss, BCELoss
 
 # Sử dụng loss functions
 criterion = CrossEntropyLoss()
@@ -61,7 +61,7 @@ loss = criterion(predictions, targets)
 ## Cài Đặt
 
 ```bash
-pip install nexor
+pip install texor
 ```
 
 ## Command Line Interface (CLI)
@@ -70,16 +70,16 @@ Nexor cung cấp giao diện dòng lệnh (CLI) mạnh mẽ với các tính nă
 
 ```bash
 # Xem thông tin về môi trường và cài đặt
-nexor info
+texor info
 
 # Liệt kê các module có sẵn
-nexor list
+texor list
 
 # Tìm kiếm module cụ thể
-nexor list resnet
+texor list resnet
 
 # Kiểm tra môi trường và dependencies
-nexor check
+texor check
 ```
 
 ### Tính năng CLI:
@@ -92,8 +92,8 @@ nexor check
 ## Ví Dụ Cơ Bản
 
 ```python
-from nexor.nn import Sequential, Linear, ReLU
-from nexor.core import Tensor
+from texor.nn import Sequential, Linear, ReLU
+from texor.core import Tensor
 import numpy as np
 
 # Tạo model
