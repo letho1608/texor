@@ -66,7 +66,7 @@ pip install texor
 
 ## Command Line Interface (CLI)
 
-Nexor cung cấp giao diện dòng lệnh (CLI) mạnh mẽ với các tính năng trực quan:
+texor cung cấp giao diện dòng lệnh (CLI) mạnh mẽ với các tính năng trực quan:
 
 ```bash
 # Xem thông tin về môi trường và cài đặt
