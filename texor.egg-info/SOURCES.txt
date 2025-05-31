@@ -2,15 +2,14 @@ LICENSE
 MANIFEST.in
 README.md
 setup.py
-docs/CONTRIBUTING.md
-docs/INSTALLATION.md
-docs/README_VN.md
+examples/demo_native_performance.py
 examples/mnist_example.py
 tests/run_integration_tests.py
 tests/run_tests.py
 tests/test_layers.py
 tests/test_layers_advanced.py
 tests/test_model.py
+tests/test_model_advanced.py
 tests/test_optimizers.py
 tests/test_optimizers_advanced.py
 tests/test_tensor.py

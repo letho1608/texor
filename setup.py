@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="texor",
-    version="0.1.2",
+    version="0.1.1",
     author="letho1608",
     author_email="letho16082003@gmail.com",
     description="Lightweight native deep learning framework with PyTorch-style API",
