@@ -49,15 +49,9 @@ class Tanh(Activation):
     """Hyperbolic tangent activation function"""
     
     def forward(self, inputs: Tensor) -> Tensor:
-        if backend.current == 'tensorflow':
-            return backend.tanh(inputs)
-        return Tensor(np.tanh(inputs.numpy()))
-        
-    def backward(self, grad: Tensor) -> Tensor:
-        if self.cached_input is None:
-            raise RuntimeError("Backward called before forward!")
-        tanh = np.tanh(self.cached_input.numpy())
-        return grad * (1 - tanh ** 2)
+        data = inputs.data
+        result = np.tanh(data)
+        return Tensor(result, requires_grad=inputs.requires_grad)
 
 class LeakyReLU(Activation):
     """Leaky ReLU activation function"""
