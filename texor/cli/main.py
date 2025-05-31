@@ -43,13 +43,15 @@ def info():
         ("Texor Version", __version__),
     ]
     
-    # Available components
+    # Available components (accurate list)
     modules = {
-        "Core": ["Tensor", "Autograd", "Device Management", "Backend"],
-        "Neural Networks": ["Linear", "Conv2D", "MaxPool2D", "Sequential", "ReLU", "Sigmoid", "Tanh"],
-        "Loss Functions": ["MSELoss", "CrossEntropyLoss", "BCELoss", "L1Loss"],
-        "Optimizers": ["SGD", "Adam", "RMSprop", "AdamW", "Adadelta"],
-        "Data": ["Dataset", "DataLoader", "Transforms"]
+        "Core": ["Tensor", "Autograd", "Device Management", "Native Backend"],
+        "Neural Networks": ["Linear", "Conv2D", "MaxPool2D", "BatchNorm2D", "Sequential"],
+        "Activations": ["ReLU", "Sigmoid", "Tanh"],
+        "Loss Functions": ["MSELoss", "CrossEntropyLoss", "BCELoss", "L1Loss", "HuberLoss", "SmoothL1Loss", "KLDivLoss"],
+        "Optimizers": ["SGD", "Adam", "RMSprop", "Adagrad", "Adadelta"],
+        "Data": ["Dataset", "DataLoader", "Transform", "Compose", "Normalize", "ToTensor"],
+        "Models": ["Model"]
     }
     
     # Display system information

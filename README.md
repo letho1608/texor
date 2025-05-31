@@ -37,7 +37,7 @@ pip install numpy numba
 pip install cupy
 
 # Install Texor
-git clone https://github.com/your-repo/texor.git
+git clone https://github.com/letho1608/texor
 cd texor
 pip install -e .
 ```
@@ -220,12 +220,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Built on the shoulders of NumPy and Numba
 - Community feedback and contributions
 
-## 📞 Support
-
-- 📧 Email: support@texor.ai
-- 🐛 Issues: [GitHub Issues](https://github.com/your-repo/texor/issues)
-- 💬 Discussions: [GitHub Discussions](https://github.com/your-repo/texor/discussions)
-
----
 
 **Made with ❤️ for the ML community**
