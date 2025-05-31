@@ -64,4 +64,4 @@ class SumBackward(Context):
         return result
 
 # Import Tensor at the end to avoid circular import
-from .tensor import Tensor
+from .native_tensor import Tensor

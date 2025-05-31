@@ -3,6 +3,7 @@ MANIFEST.in
 README.md
 setup.py
 docs/CONTRIBUTING.md
+docs/INSTALLATION.md
 docs/README_VN.md
 examples/mnist_example.py
 tests/run_integration_tests.py
@@ -10,7 +11,6 @@ tests/run_tests.py
 tests/test_layers.py
 tests/test_layers_advanced.py
 tests/test_model.py
-tests/test_model_advanced.py
 tests/test_optimizers.py
 tests/test_optimizers_advanced.py
 tests/test_tensor.py
@@ -28,10 +28,10 @@ texor/cli/main.py
 texor/cli/wrapper.py
 texor/core/__init__.py
 texor/core/autograd.py
-texor/core/backend.py
 texor/core/context.py
+texor/core/native_backend.py
+texor/core/native_tensor.py
 texor/core/ops.py
-texor/core/tensor.py
 texor/data/__init__.py
 texor/data/dataset.py
 texor/data/transforms.py

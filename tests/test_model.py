@@ -1,8 +1,11 @@
 import unittest
 import numpy as np
-from nexor.core import Tensor
-from nexor.nn import Sequential, Linear, ReLU, MSELoss
-from nexor.optim import SGD
+from texor.core.native_tensor import Tensor
+from texor.nn.model import Sequential
+from texor.nn.layers import Linear
+from texor.nn.activations import ReLU
+from texor.nn.loss import MSELoss
+from texor.optim.optimizers import SGD
 
 class TestModel(unittest.TestCase):
     def setUp(self):
@@ -98,15 +101,14 @@ class TestModel(unittest.TestCase):
         single_input = Tensor(np.random.randn(1, 10))
         pred = self.model.predict(single_input)
         self.assertEqual(pred.shape, (1, 1))
-        
-        # Batch prediction
+          # Batch prediction
         batch_input = Tensor(np.random.randn(16, 10))
         preds = self.model.predict(batch_input)
         self.assertEqual(preds.shape, (16, 1))
 
     def test_parameter_access(self):
         """Test access to model parameters"""
-        params = self.model.parameters()
+        params = list(self.model.parameters())  # Convert generator to list
         
         # Check if we have parameters for both Linear layers
         # Each Linear layer has weights and biases

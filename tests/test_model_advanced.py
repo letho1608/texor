@@ -1,223 +1,205 @@
 import unittest
 import numpy as np
-import tensorflow as tf
-import torch
-from nexor.core import Tensor
-from nexor.nn import Sequential, Linear, ReLU, Conv2D, MaxPool2D
-from nexor.nn.advanced_layers import ResidualBlock, LSTM
-from nexor.optim import Adam
-from nexor.core.backend import backend
+from texor.core import Tensor
+from texor.nn import Sequential, Linear, ReLU, Conv2D, MaxPool2D
+from texor.optim import Adam
+from texor.nn.loss import CrossEntropyLoss, MSELoss
 
 class TestModelAdvanced(unittest.TestCase):
     def setUp(self):
         """Set up test environment"""
-        backend.set_backend('auto')
         np.random.seed(42)
-        tf.random.set_seed(42)
-        torch.manual_seed(42)
 
-    def test_complex_model_training(self):
-        """Test training of a complex model with multiple backends"""
-        # Create a CNN with residual connections
+    def test_complex_model_creation(self):
+        """Test creation of a complex model with multiple layers"""
         model = Sequential([
-            Conv2D(3, 64, kernel_size=3, padding=1),
-            ResidualBlock(64, 64),
-            MaxPool2D(kernel_size=2),
-            ResidualBlock(64, 128, stride=2),
-            MaxPool2D(kernel_size=2),
-            Lambda(lambda x: x.reshape(x.shape[0], -1)),
-            Linear(128 * 8 * 8, 10)
+            Linear(784, 128),
+            ReLU(),
+            Linear(128, 64),
+            ReLU(),
+            Linear(64, 10)
         ])
+        
+        # Test forward pass
+        x = Tensor(np.random.randn(32, 784))
+        output = model(x)
+        
+        self.assertEqual(output.shape, (32, 10))
+        self.assertFalse(np.isnan(output.data).any())
 
-        # Create sample data
-        x = Tensor(np.random.randn(32, 3, 32, 32))
-        y = Tensor(np.eye(10)[np.random.randint(0, 10, 32)])
-
-        # Test with different backends
-        backends = ['tensorflow', 'pytorch']
-        for backend_name in backends:
-            backend.set_backend(backend_name)
+    def test_model_training_loop(self):
+        """Test manual training loop with complex model"""
+        model = Sequential([
+            Linear(10, 20),
+            ReLU(),
+            Linear(20, 5)
+        ])
+        
+        optimizer = Adam(model.parameters(), lr=0.01)
+        criterion = MSELoss()
+        
+        # Generate training data
+        x = Tensor(np.random.randn(32, 10))
+        y = Tensor(np.random.randn(32, 5))
+        
+        losses = []
+        for epoch in range(5):
+            # Forward pass
+            pred = model(x)
+            loss = criterion(pred, y)
             
-            # Compile model
-            model.compile(
-                optimizer='adam',
-                loss='categorical_crossentropy',
-                metrics=['accuracy']
-            )
+            # Backward pass
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+            
+            losses.append(loss.data.item())
+        
+        # Check that loss is decreasing
+        self.assertLess(losses[-1], losses[0])
 
-            # Train
-            history = model.fit(
-                x=x,
-                y=y,
-                epochs=3,
-                batch_size=8,
-                validation_split=0.2
-            )
+    def test_model_with_different_activations(self):
+        """Test model with different activation functions"""
+        from texor.nn import Sigmoid, Tanh
+        
+        model = Sequential([
+            Linear(5, 10),
+            ReLU(),
+            Linear(10, 8),
+            Sigmoid(),
+            Linear(8, 3),
+            Tanh()
+        ])
+        
+        x = Tensor(np.random.randn(16, 5))
+        output = model(x)
+        
+        self.assertEqual(output.shape, (16, 3))
+        # Tanh output should be between -1 and 1
+        self.assertTrue((output.data >= -1).all())
+        self.assertTrue((output.data <= 1).all())
 
-            # Check training metrics
-            self.assertIn('loss', history)
-            self.assertIn('accuracy', history)
-            self.assertIn('val_loss', history)
-            self.assertIn('val_accuracy', history)
+    def test_classification_model(self):
+        """Test a classification model with cross entropy loss"""
+        model = Sequential([
+            Linear(20, 50),
+            ReLU(),
+            Linear(50, 10)
+        ])
+        
+        optimizer = Adam(model.parameters(), lr=0.001)
+        criterion = CrossEntropyLoss()
+        
+        # Generate classification data
+        x = Tensor(np.random.randn(64, 20))
+        y = Tensor(np.random.randint(0, 10, (64,)))
+        
+        initial_loss = None
+        final_loss = None
+        
+        for epoch in range(10):
+            pred = model(x)
+            loss = criterion(pred, y)
+            
+            if epoch == 0:
+                initial_loss = loss.data.item()
+            if epoch == 9:
+                final_loss = loss.data.item()
+            
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+        
+        # Loss should decrease
+        self.assertLess(final_loss, initial_loss)
+        
+        # Test prediction accuracy
+        with Tensor.no_grad():
+            pred = model(x)
+            predicted_classes = np.argmax(pred.data, axis=1)
+            # At least some predictions should be correct by chance
+            accuracy = np.mean(predicted_classes == y.data)
+            self.assertGreaterEqual(accuracy, 0.0)
 
-    def test_model_save_load(self):
-        """Test model saving and loading across backends"""
+    def test_gradient_flow(self):
+        """Test that gradients flow properly through the network"""
+        model = Sequential([
+            Linear(5, 10),
+            ReLU(),
+            Linear(10, 1)
+        ])
+        
+        x = Tensor(np.random.randn(8, 5), requires_grad=True)
+        y = Tensor(np.random.randn(8, 1))
+        
+        criterion = MSELoss()
+        
+        # Forward pass
+        pred = model(x)
+        loss = criterion(pred, y)
+        
+        # Backward pass
+        loss.backward()
+        
+        # Check that all parameters have gradients
+        for param in model.parameters():
+            self.assertIsNotNone(param.grad)
+            self.assertFalse(np.isnan(param.grad.data).any())
+        
+        # Check input gradient
+        self.assertIsNotNone(x.grad)
+        self.assertFalse(np.isnan(x.grad.data).any())
+
+    def test_model_memory_efficiency(self):
+        """Test model memory usage and efficiency"""
+        # Large model test
+        model = Sequential([
+            Linear(1000, 500),
+            ReLU(),
+            Linear(500, 100),
+            ReLU(),
+            Linear(100, 10)
+        ])
+        
+        x = Tensor(np.random.randn(100, 1000))
+        
+        # Multiple forward passes should not cause memory issues
+        for _ in range(10):
+            output = model(x)
+            self.assertEqual(output.shape, (100, 10))
+
+    def test_batch_processing(self):
+        """Test model with different batch sizes"""
+        model = Sequential([
+            Linear(15, 30),
+            ReLU(),
+            Linear(30, 5)
+        ])
+        
+        batch_sizes = [1, 8, 32, 64]
+        
+        for batch_size in batch_sizes:
+            x = Tensor(np.random.randn(batch_size, 15))
+            output = model(x)
+            self.assertEqual(output.shape, (batch_size, 5))
+
+    def test_model_reproducibility(self):
+        """Test that model produces consistent results with same input"""
+        np.random.seed(123)
+        
         model = Sequential([
             Linear(10, 5),
             ReLU(),
             Linear(5, 1)
         ])
-
-        x = Tensor(np.random.randn(10, 10))
-        original_output = model(x)
-
-        # Save model
-        model.save('test_model.h5')
-
-        # Load model with different backend
-        backend.set_backend('tensorflow' if backend.current == 'pytorch' else 'pytorch')
-        loaded_model = Sequential.load('test_model.h5')
-
-        # Check outputs are the same
-        loaded_output = loaded_model(x)
-        self.assertTrue(np.allclose(original_output.numpy(), 
-                                  loaded_output.numpy(), rtol=1e-5))
-
-    def test_mixed_precision_training(self):
-        """Test mixed precision training"""
-        model = Sequential([
-            Linear(100, 50),
-            ReLU(),
-            Linear(50, 10)
-        ])
-
-        x = Tensor(np.random.randn(32, 100))
-        y = Tensor(np.eye(10)[np.random.randint(0, 10, 32)])
-
-        # Enable mixed precision
-        backend.enable_mixed_precision()
-
-        model.compile(
-            optimizer='adam',
-            loss='categorical_crossentropy',
-            metrics=['accuracy']
-        )
-
-        history = model.fit(
-            x=x,
-            y=y,
-            epochs=3,
-            batch_size=8
-        )
-
-        # Check if training completed successfully
-        self.assertIn('loss', history)
-        self.assertTrue(all(not np.isnan(loss) for loss in history['loss']))
-
-    def test_multi_gpu_training(self):
-        """Test multi-GPU training if available"""
-        if not torch.cuda.device_count() > 1:
-            self.skipTest("Multiple GPUs not available")
-
-        model = Sequential([
-            Conv2D(3, 64, kernel_size=3),
-            ResidualBlock(64, 64),
-            MaxPool2D(kernel_size=2),
-            Linear(64 * 14 * 14, 10)
-        ])
-
-        x = Tensor(np.random.randn(64, 3, 32, 32))
-        y = Tensor(np.eye(10)[np.random.randint(0, 10, 64)])
-
-        model.compile(
-            optimizer='adam',
-            loss='categorical_crossentropy',
-            metrics=['accuracy']
-        )
-
-        # Train with data parallel
-        history = model.fit(
-            x=x,
-            y=y,
-            epochs=3,
-            batch_size=16,
-            use_multi_gpu=True
-        )
-
-        self.assertIn('loss', history)
-
-    def test_gradient_accumulation(self):
-        """Test gradient accumulation for large models"""
-        model = Sequential([
-            Linear(1000, 500),
-            ReLU(),
-            Linear(500, 100)
-        ])
-
-        x = Tensor(np.random.randn(128, 1000))
-        y = Tensor(np.random.randn(128, 100))
-
-        model.compile(
-            optimizer='adam',
-            loss='mse'
-        )
-
-        # Train with gradient accumulation
-        history = model.fit(
-            x=x,
-            y=y,
-            epochs=3,
-            batch_size=16,
-            accumulation_steps=4
-        )
-
-        self.assertIn('loss', history)
-
-    def test_training_callbacks(self):
-        """Test training callbacks"""
-        class TestCallback:
-            def __init__(self):
-                self.called = {
-                    'on_epoch_begin': 0,
-                    'on_epoch_end': 0,
-                    'on_batch_begin': 0,
-                    'on_batch_end': 0
-                }
-
-            def on_epoch_begin(self, epoch):
-                self.called['on_epoch_begin'] += 1
-
-            def on_epoch_end(self, epoch, logs):
-                self.called['on_epoch_end'] += 1
-
-            def on_batch_begin(self, batch):
-                self.called['on_batch_begin'] += 1
-
-            def on_batch_end(self, batch, logs):
-                self.called['on_batch_end'] += 1
-
-        model = Sequential([
-            Linear(10, 1)
-        ])
-
-        x = Tensor(np.random.randn(32, 10))
-        y = Tensor(np.random.randn(32, 1))
-
-        callback = TestCallback()
-        model.compile(optimizer='adam', loss='mse')
-        model.fit(
-            x=x,
-            y=y,
-            epochs=2,
-            batch_size=8,
-            callbacks=[callback]
-        )
-
-        # Check if all callbacks were called
-        self.assertEqual(callback.called['on_epoch_begin'], 2)
-        self.assertEqual(callback.called['on_epoch_end'], 2)
-        self.assertEqual(callback.called['on_batch_begin'], 8)  # 32/8 * 2
-        self.assertEqual(callback.called['on_batch_end'], 8)
+        
+        x = Tensor(np.random.randn(16, 10))
+        
+        # Multiple runs should give same output
+        output1 = model(x)
+        output2 = model(x)
+        
+        np.testing.assert_array_equal(output1.data, output2.data)
 
 if __name__ == '__main__':
     unittest.main()

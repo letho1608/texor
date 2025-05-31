@@ -3,9 +3,8 @@ import os
 import sys
 
 def run_cli():
-    # Set environment variables to suppress TensorFlow warnings
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-    os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+    # Set environment variables for optimal performance
+    os.environ['NUMBA_THREADING_LAYER'] = 'threadsafe'
     os.environ['PYTHONWARNINGS'] = 'ignore'
 
     # Redirect stdout/stderr to null for imports
@@ -15,10 +14,10 @@ def run_cli():
     sys.stdout = null
     sys.stderr = null
 
-    # Import tensorflow and configure
-    import tensorflow as tf
-    tf.get_logger().setLevel('ERROR')
-    tf.autograph.set_verbosity(0)
+    # Configure warnings for native backend
+    import warnings
+    warnings.filterwarnings('ignore', category=UserWarning)
+    warnings.filterwarnings('ignore', category=DeprecationWarning)
 
     # Restore stdout/stderr
     sys.stdout = _stdout

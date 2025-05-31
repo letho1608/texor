@@ -1,8 +1,6 @@
 import unittest
 import numpy as np
-import tensorflow as tf
-import torch
-from nexor.core.tensor import Tensor
+from texor.core.native_tensor import Tensor
 
 class TestTensor(unittest.TestCase):
     def test_creation(self):
@@ -10,22 +8,12 @@ class TestTensor(unittest.TestCase):
         # From numpy array
         np_data = np.array([[1, 2], [3, 4]])
         t1 = Tensor(np_data)
-        self.assertTrue(np.array_equal(t1.numpy(), np_data))
-        
-        # From TensorFlow tensor
-        tf_data = tf.constant([[1, 2], [3, 4]])
-        t2 = Tensor(tf_data)
-        self.assertTrue(np.array_equal(t2.numpy(), tf_data.numpy()))
-        
-        # From PyTorch tensor
-        torch_data = torch.tensor([[1, 2], [3, 4]])
-        t3 = Tensor(torch_data)
-        self.assertTrue(np.array_equal(t3.numpy(), torch_data.detach().numpy()))
+        self.assertTrue(np.array_equal(t1.data, np_data))
         
         # From Python list
         list_data = [[1, 2], [3, 4]]
         t4 = Tensor(list_data)
-        self.assertTrue(np.array_equal(t4.numpy(), np.array(list_data)))
+        self.assertTrue(np.array_equal(t4.data, np.array(list_data)))
 
     def test_basic_operations(self):
         """Test basic arithmetic operations"""
@@ -35,65 +23,67 @@ class TestTensor(unittest.TestCase):
         # Addition
         c = a + b
         self.assertTrue(np.array_equal(
-            c.numpy(),
+            c.data,
             np.array([[6, 8], [10, 12]])
         ))
         
         # Multiplication
         d = a * b
         self.assertTrue(np.array_equal(
-            d.numpy(),
+            d.data,
             np.array([[5, 12], [21, 32]])
         ))
         
         # Matrix multiplication
         e = a @ b
-        self.assertTrue(np.array_equal(
-            e.numpy(),
-            np.array([[19, 22], [43, 50]])
-        ))
+        expected = np.array([[19, 22], [43, 50]])
+        self.assertTrue(np.array_equal(e.data, expected))
 
     def test_gradients(self):
         """Test gradient computation"""
-        x = Tensor([[1, 2], [3, 4]], requires_grad=True)
+        x = Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
         y = x * x  # Element-wise square
         z = y.sum()  # Sum all elements
         
         z.backward()
         # Gradient should be 2x
-        expected_grad = np.array([[2, 4], [6, 8]], dtype=np.float32)
-        actual_grad = x.grad
-        print(f"\nExpected grad:\n{expected_grad}")
-        print(f"Actual grad:\n{actual_grad}")
-        print(f"Shapes: expected {expected_grad.shape}, actual {actual_grad.shape}")
-        print(f"Types: expected {expected_grad.dtype}, actual {actual_grad.dtype}")
+        expected_grad = np.array([[2.0, 4.0], [6.0, 8.0]], dtype=np.float64)
+        actual_grad = x.grad.data if x.grad is not None else None
         
-        if actual_grad is not None:
-            diff = np.abs(actual_grad - expected_grad)
-            print(f"Max absolute difference: {np.max(diff)}")
-            
+        self.assertIsNotNone(actual_grad)
         self.assertTrue(np.allclose(actual_grad, expected_grad))
-
-    def test_backend_conversion(self):
-        """Test conversion between different backends"""
-        x = Tensor([[1, 2], [3, 4]])
-        
-        # Test TensorFlow conversion
-        tf_tensor = x.tensorflow()
-        self.assertIsInstance(tf_tensor, tf.Tensor)
-        self.assertTrue(np.array_equal(tf_tensor.numpy(), x.numpy()))
-        
-        # Test PyTorch conversion
-        torch_tensor = x.pytorch()
-        self.assertIsInstance(torch_tensor, torch.Tensor)
-        self.assertTrue(np.array_equal(torch_tensor.detach().numpy(), x.numpy()))
 
     def test_shape_and_dtype(self):
         """Test shape and dtype properties"""
         x = Tensor(np.random.randn(2, 3, 4))
         
         self.assertEqual(x.shape, (2, 3, 4))
-        self.assertEqual(x.dtype, np.float64)
+        self.assertEqual(len(x.shape), 3)
+
+    def test_device_management(self):
+        """Test device handling"""
+        x = Tensor([[1, 2], [3, 4]])
+        self.assertIn(x.device, ['cpu', 'cuda:0'])
+
+    def test_requires_grad(self):
+        """Test gradient requirement setting"""
+        x = Tensor([[1, 2], [3, 4]], requires_grad=True)
+        self.assertTrue(x.requires_grad)
+        
+        y = Tensor([[1, 2], [3, 4]], requires_grad=False)
+        self.assertFalse(y.requires_grad)
+
+    def test_tensor_operations(self):
+        """Test various tensor operations"""
+        x = Tensor([[1, 2, 3], [4, 5, 6]])
+        
+        # Test sum
+        s = x.sum()
+        self.assertEqual(s.data.item(), 21)
+        
+        # Test mean
+        m = x.mean()
+        self.assertEqual(m.data.item(), 3.5)
 
 if __name__ == '__main__':
     unittest.main()

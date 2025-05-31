@@ -30,10 +30,10 @@ class DependencyChecker:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for name in node.names:
-                    if name.name.startswith('nexor'):
+                    if name.name.startswith('texor'):
                         self.dependencies[module_name].add(name.name)
             elif isinstance(node, ast.ImportFrom):
-                if node.module and node.module.startswith('nexor'):
+                if node.module and node.module.startswith('texor'):
                     self.dependencies[module_name].add(node.module)
                     
     def _get_module_name(self, filepath: str) -> str:
@@ -116,7 +116,7 @@ def main():
     checker = DependencyChecker(root_dir)
     
     # Find and analyze all Python files
-    for root, _, files in os.walk(os.path.join(root_dir, 'nexor')):
+    for root, _, files in os.walk(os.path.join(root_dir, 'texor')):
         for file in files:
             if file.endswith('.py'):
                 filepath = os.path.join(root, file)

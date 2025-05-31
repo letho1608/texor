@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test runner for the Nexor deep learning library.
+Test runner for the Texor deep learning library.
 Executes all test suites and provides a detailed report of test results.
 """
 
@@ -36,7 +36,7 @@ def print_separator(char: str = '-', length: int = 70):
     print(char * length)
 
 def main():
-    print("\nNexor Test Runner")
+    print("\nTexor Test Runner")
     print_separator('=')
     print("Running all test suites...\n")
     

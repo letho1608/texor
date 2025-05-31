@@ -1,7 +1,7 @@
 Metadata-Version: 2.4
 Name: texor
 Version: 0.1.0
-Summary: A ai library combining the best of TensorFlow and PyTorch
+Summary: A lightweight native AI library with optimizations from TensorFlow and PyTorch
 Home-page: https://github.com/letho1608/texor
 Author: letho1608
 Author-email: letho16082003@gmail.com
@@ -20,8 +20,8 @@ Requires-Python: >=3.8
 Description-Content-Type: text/markdown
 License-File: LICENSE
 Requires-Dist: numpy>=1.19.0
-Requires-Dist: torch>=1.9.0
-Requires-Dist: tensorflow>=2.6.0
+Requires-Dist: scipy>=1.7.0
+Requires-Dist: numba>=0.56.0
 Requires-Dist: matplotlib>=3.3.0
 Requires-Dist: tqdm>=4.62.0
 Requires-Dist: rich>=10.0.0
@@ -37,6 +37,11 @@ Provides-Extra: docs
 Requires-Dist: sphinx>=4.0; extra == "docs"
 Requires-Dist: sphinx-rtd-theme>=0.5.0; extra == "docs"
 Requires-Dist: sphinx-autodoc-typehints>=1.12.0; extra == "docs"
+Provides-Extra: gpu
+Requires-Dist: cupy-cuda11x>=9.0.0; extra == "gpu"
+Provides-Extra: interop
+Requires-Dist: onnx>=1.12.0; extra == "interop"
+Requires-Dist: onnxruntime>=1.12.0; extra == "interop"
 Dynamic: author
 Dynamic: author-email
 Dynamic: classifier
@@ -49,40 +54,39 @@ Dynamic: requires-dist
 Dynamic: requires-python
 Dynamic: summary
 
-# Texor - Comprehensive AI Framework
+# Texor - Native Machine Learning Framework
 
-Texor is a comprehensive AI framework that combines the best features of TensorFlow and PyTorch. It provides a high-level API while maintaining flexibility and performance through a hybrid backend system.
+Texor is a comprehensive native machine learning framework built from the ground up using NumPy and Numba for high-performance numerical computing. It provides a clean, intuitive API similar to modern deep learning frameworks while being completely independent of TensorFlow and PyTorch.
 
 ## Key Features
 
-### 1. Hybrid Backend
-- Leverage the power of both TensorFlow and PyTorch
-- Seamlessly switch between backends
-- Automatic optimization based on use case
+### 1. Pure Native Implementation
+- Built entirely with NumPy and Numba for maximum performance
+- Zero external ML framework dependencies
+- Full control over computational graph and automatic differentiation
+- Optimized for both CPU and GPU (via CuPy) acceleration
 
-### 2. Core API
+### 2. Core Tensor API
 ```python
 from texor.core import Tensor
 
 # Create tensors from various sources
 x = Tensor([[1, 2], [3, 4]])  # From Python list
-x = Tensor(numpy_array)        # From NumPy array
-x = Tensor(tf_tensor)         # From TensorFlow tensor
-x = Tensor(torch_tensor)      # From PyTorch tensor
+x = Tensor(numpy_array)       # From NumPy array
 
-# Access data in multiple formats
-numpy_data = x.numpy()
-tf_data = x.tensorflow()
-torch_data = x.pytorch()
+# Access data and perform operations
+numpy_data = x.numpy()        # Convert to NumPy
+result = x.matmul(y)         # Matrix multiplication with gradient tracking
 ```
 
 ### 3. Neural Network Layers
 ```python
-from texor.nn import Sequential, Linear, Conv2D, MaxPool2D, ReLU, Dropout
+from texor.nn import Sequential, Linear, Conv2D, MaxPool2D, ReLU, BatchNorm2D
 
 model = Sequential([
     Conv2D(in_channels=1, out_channels=32, kernel_size=3),
     ReLU(),
+    BatchNorm2D(32),
     MaxPool2D(kernel_size=2),
     Conv2D(in_channels=32, out_channels=64, kernel_size=3),
     ReLU(),
@@ -102,17 +106,27 @@ optimizer = SGD(model.parameters(), lr=0.01, momentum=0.9)
 
 ### 5. Loss Functions
 ```python
-from texor.nn import MSELoss, CrossEntropyLoss, BCELoss
+from texor.nn import MSELoss, CrossEntropyLoss, BCELoss, L1Loss, HuberLoss
 
-# Use loss functions
+# Use loss functions with automatic gradient computation
 criterion = CrossEntropyLoss()
-loss = criterion(predictions, targets)
+loss = criterion(predictions, targets)  # Supports backpropagation
 ```
 
 ## Installation
 
 ```bash
 pip install texor
+```
+
+### Dependencies
+- **NumPy**: Core numerical computing
+- **Numba**: Just-in-time compilation for performance
+- **CuPy** (optional): GPU acceleration support
+
+```bash
+# For GPU support (optional)
+pip install cupy
 ```
 
 ## Command Line Interface (CLI)
@@ -143,34 +157,38 @@ texor check
 
 ```python
 from texor.nn import Sequential, Linear, ReLU
+from texor.optim import Adam
+from texor.nn import MSELoss
 from texor.core import Tensor
 import numpy as np
 
-# Create model
+# Create native model
 model = Sequential([
     Linear(input_size=784, output_size=256),
     ReLU(),
     Linear(input_size=256, output_size=10)
 ])
 
-# Compile model
-model.compile(
-    optimizer='adam',
-    loss='categorical_crossentropy'
-)
+# Set up training
+optimizer = Adam(model.parameters(), lr=0.001)
+criterion = MSELoss()
 
 # Create sample data
 x = np.random.randn(100, 784)
-y = np.random.randint(0, 10, size=(100,))
-y = np.eye(10)[y]  # One-hot encode
+y = np.random.randn(100, 10)
 
-# Train model
-model.fit(
-    x=Tensor(x),
-    y=Tensor(y),
-    epochs=10,
-    batch_size=32
-)
+# Training loop
+for epoch in range(10):
+    # Forward pass
+    predictions = model(Tensor(x))
+    loss = criterion(predictions, Tensor(y))
+    
+    # Backward pass
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    
+    print(f"Epoch {epoch+1}, Loss: {loss.item():.4f}")
 ```
 
 ## MNIST Example
@@ -179,19 +197,19 @@ See `examples/mnist_example.py` for a complete example of training a CNN on the 
 ## API Documentation
 
 ### Core Module
-- `Tensor`: Basic class for tensor operations
+- `Tensor`: Native tensor class with automatic differentiation
 - `zeros`, `ones`, `randn`: Tensor creation functions
-- `from_numpy`, `from_tensorflow`, `from_pytorch`: Conversions from other formats
+- Native operations with gradient tracking
 
-### Neural Network (nn) Module
-- Layers: `Linear`, `Conv2D`, `MaxPool2D`, `Dropout`
-- Activations: `ReLU`, `Sigmoid`, `Tanh`
-- Loss Functions: `MSELoss`, `CrossEntropyLoss`, `BCELoss`
+### Neural Network (nn) Module  
+- Layers: `Linear`, `Conv2D`, `MaxPool2D`, `BatchNorm2D`
+- Activations: `ReLU`, `Sigmoid`
+- Loss Functions: `MSELoss`, `CrossEntropyLoss`, `BCELoss`, `L1Loss`, `HuberLoss`, `SmoothL1Loss`, `KLDivLoss`
 - Model: `Sequential` - Easy-to-use API for model building
 
 ### Optimizers Module
 - `SGD`: Stochastic Gradient Descent with momentum
-- `Adam`: Adam optimizer
+- `Adam`: Adam optimizer with native implementation
 - `RMSprop`: RMSprop optimizer
 
 ## Contributing

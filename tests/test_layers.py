@@ -1,7 +1,8 @@
 import unittest
 import numpy as np
-from nexor.core import Tensor
-from nexor.nn.layers import Linear, Conv2d, MaxPool2d, Dropout
+from texor.core.native_tensor import Tensor
+from texor.nn.layers import Linear, Conv2D, MaxPool2D, Dropout
+from texor.nn.activations import ReLU
 
 class TestLayers(unittest.TestCase):
     def test_linear_layer(self):
@@ -41,9 +42,8 @@ class TestLayers(unittest.TestCase):
         height = 32
         width = 32
         kernel_size = 3
-        
-        # Create layer
-        layer = Conv2d(in_channels, out_channels, kernel_size, padding=1)
+          # Create layer
+        layer = Conv2D(in_channels, out_channels, kernel_size, padding=1)
         
         # Create input
         x = Tensor(np.random.randn(batch_size, in_channels, height, width))
@@ -67,9 +67,8 @@ class TestLayers(unittest.TestCase):
         height = 32
         width = 32
         pool_size = 2
-        
-        # Create layer
-        layer = MaxPool2d(kernel_size=pool_size)
+          # Create layer
+        layer = MaxPool2D(kernel_size=pool_size)
         
         # Create input
         x = Tensor(np.random.randn(batch_size, channels, height, width))

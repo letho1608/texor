@@ -1,7 +1,6 @@
 include LICENSE
 include README.md
-include docs/README_VN.md
 recursive-include examples *.py
 recursive-include tests *.py
 recursive-include docs *.md
-include nexor/py.typed
+include texor/py.typed

@@ -5,10 +5,10 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="texor",
-    version="0.1.0",
+    version="0.1.1",
     author="letho1608",
     author_email="letho16082003@gmail.com",
-    description="A ai library combining the best of TensorFlow and PyTorch",
+    description="Lightweight native deep learning framework with PyTorch-style API",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/letho1608/texor",
@@ -22,24 +22,25 @@ setup(
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
         "Operating System :: OS Independent",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
         "Topic :: Software Development :: Libraries :: Python Modules",
+        "Topic :: Scientific/Engineering :: Mathematics",
     ],
     install_requires=[
         "numpy>=1.19.0",
-        "torch>=1.9.0",
-        "tensorflow>=2.6.0",
-        "matplotlib>=3.3.0",
-        "tqdm>=4.62.0",
+        "numba>=0.56.0",
         "rich>=10.0.0",
         "click>=8.0.0"
     ],
     extras_require={
+        'gpu': [
+            'cupy-cuda11x>=9.0.0',  # GPU support
+        ],
         'dev': [
             'pytest>=6.0',
             'pytest-cov>=2.0',
-            'flake8>=3.9.0',
             'black>=21.5b2',
             'isort>=5.8.0',
             'mypy>=0.900',
@@ -47,17 +48,21 @@ setup(
         'docs': [
             'sphinx>=4.0',
             'sphinx-rtd-theme>=0.5.0',
-            'sphinx-autodoc-typehints>=1.12.0'
+        ],
+        'viz': [
+            'matplotlib>=3.3.0',
+            'tqdm>=4.62.0',
         ]
     },
     python_requires=">=3.8",
     include_package_data=True,
     package_data={
-        'nexor': ['py.typed'],
+        'texor': ['py.typed'],
     },
     entry_points={
         'console_scripts': [
-            'nexor=nexor.cli.main:main',
+            'texor=texor.cli.main:main',
         ],
-    }
+    },
+    keywords=['machine-learning', 'deep-learning', 'neural-networks', 'pytorch', 'numpy', 'autograd'],
 )

@@ -1,7 +1,7 @@
 from typing import Sequence, Any, Callable, Optional, Iterator, Union, List, Tuple
 import numpy as np
 from ..core import Tensor
-from ..core.backend import backend
+from ..core.native_backend import backend
 
 class Dataset:
     """Base dataset class"""

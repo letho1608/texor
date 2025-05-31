@@ -1,7 +1,7 @@
 from typing import Optional, Tuple, Union
 import numpy as np
-from ..core import Tensor
-from ..core.backend import backend
+from ..core.native_tensor import Tensor, zeros, randn
+from ..core.native_backend import backend
 
 class Layer:
     """Base class for all neural network layers"""
@@ -16,14 +16,20 @@ class Layer:
     def forward(self, inputs: Tensor) -> Tensor:
         raise NotImplementedError
         
-    def backward(self, grad: Tensor) -> Tensor:
-        raise NotImplementedError
-        
     def train(self) -> None:
         self.training = True
         
     def eval(self) -> None:
         self.training = False
+        
+    def parameters(self):
+        """Get all parameters"""
+        params = []
+        if hasattr(self, 'weight') and self.weight is not None:
+            params.append(self.weight)
+        if hasattr(self, 'bias') and self.bias is not None:
+            params.append(self.bias)
+        return params
         
     def state_dict(self) -> dict:
         """Get layer state"""
@@ -42,14 +48,13 @@ class Layer:
             self.bias = state_dict['bias']
 
 class Linear(Layer):
-    """Fully connected layer"""
+    """Fully connected layer with optimized initialization"""
     
     def __init__(self, in_features: int, out_features: int, bias: bool = True):
         super().__init__()
         self.in_features = in_features
-        self.out_features = out_features
-        
-        # Initialize weights using Kaiming initialization
+        self.out_features = out_features        
+        # Initialize weights using Kaiming initialization (PyTorch style)
         scale = np.sqrt(2.0 / in_features)
         self.weight = Tensor(
             np.random.normal(0, scale, (in_features, out_features)),
@@ -62,14 +67,14 @@ class Linear(Layer):
         ) if bias else None
             
     def forward(self, inputs: Tensor) -> Tensor:
-        """Forward pass using current backend"""
-        output = backend.matmul(inputs, self.weight)
+        """Forward pass using optimized matrix multiplication"""
+        output = inputs @ self.weight  # Use native tensor matmul
         if self.bias is not None:
-            output = backend.add(output, self.bias)
+            output = output + self.bias  # Use native tensor addition
         return output
 
-class Conv2d(Layer):
-    """2D Convolution layer"""
+class Conv2D(Layer):
+    """2D Convolution layer with native implementation"""
     
     def __init__(self, in_channels: int, out_channels: int, 
                  kernel_size: Union[int, Tuple[int, int]], 
@@ -83,7 +88,7 @@ class Conv2d(Layer):
         self.stride = stride if isinstance(stride, tuple) else (stride, stride)
         self.padding = padding if isinstance(padding, tuple) else (padding, padding)
         
-        # Initialize weights
+        # Initialize weights using Kaiming initialization
         scale = np.sqrt(2.0 / (in_channels * self.kernel_size[0] * self.kernel_size[1]))
         self.weight = Tensor(
             np.random.normal(0, scale, 
@@ -92,22 +97,21 @@ class Conv2d(Layer):
         )
         
         self.bias = Tensor(
-            np.zeros(out_channels),
-            requires_grad=True
+            np.zeros(out_channels),            requires_grad=True
         ) if bias else None
             
     def forward(self, inputs: Tensor) -> Tensor:
-        """Forward pass using optimal backend for convolution"""
-        return backend.conv2d(
-            inputs,
-            self.weight,
-            self.bias,
-            self.stride,
-            self.padding
-        )
+        """Forward pass using native convolution"""
+        # Use native backend for optimized convolution
+        return Tensor(backend.conv2d(
+            inputs.data,
+            self.weight.data,
+            stride=self.stride[0],
+            padding=self.padding[0]
+        ), requires_grad=inputs.requires_grad or self.weight.requires_grad)
 
-class MaxPool2d(Layer):
-    """2D max pooling layer"""
+class MaxPool2D(Layer):
+    """2D max pooling layer with native implementation"""
     
     def __init__(self, kernel_size: Union[int, Tuple[int, int]],
                  stride: Optional[Union[int, Tuple[int, int]]] = None,
@@ -119,14 +123,36 @@ class MaxPool2d(Layer):
         self.padding = padding if isinstance(padding, tuple) else (padding, padding)
         
     def forward(self, inputs: Tensor) -> Tensor:
-        """Forward pass using optimal backend for pooling"""
-        return backend.max_pool2d(
-            inputs,
-            self.kernel_size,
-            self.stride,
-            self.padding
-        )
-class BatchNorm2d(Layer):
+        """Forward pass using native max pooling"""
+        return self._max_pool2d_native(inputs)
+    
+    def _max_pool2d_native(self, inputs: Tensor) -> Tensor:
+        """Native max pooling implementation"""
+        from scipy.ndimage import maximum_filter
+        
+        # Simplified max pooling - in practice would need proper implementation
+        batch_size, channels, height, width = inputs.shape
+        kh, kw = self.kernel_size
+        sh, sw = self.stride
+        
+        out_h = (height - kh) // sh + 1
+        out_w = (width - kw) // sw + 1
+        
+        output = np.zeros((batch_size, channels, out_h, out_w), dtype=inputs.dtype)
+        
+        for b in range(batch_size):
+            for c in range(channels):
+                for oh in range(out_h):
+                    for ow in range(out_w):
+                        h_start, h_end = oh * sh, oh * sh + kh
+                        w_start, w_end = ow * sw, ow * sw + kw
+                        output[b, c, oh, ow] = np.max(
+                            inputs.data[b, c, h_start:h_end, w_start:w_end]
+                        )
+        
+        return Tensor(output, requires_grad=inputs.requires_grad)
+
+class BatchNorm2D(Layer):
     """2D Batch Normalization layer"""
     
     def __init__(self, num_features: int, eps: float = 1e-5, momentum: float = 0.1):
@@ -243,8 +269,9 @@ class Dropout(Layer):
             np.random.binomial(1, 1-self.p, inputs.shape).astype(np.float32)
         )
         
-        # Apply mask and scale using backend
-        scaled_inputs = backend.div(inputs * self.mask, (1 - self.p))
+        # Apply mask and scale (avoid backend call with Tensors)
+        masked_inputs = inputs * self.mask
+        scaled_inputs = masked_inputs * (1.0 / (1 - self.p))
         return scaled_inputs
         
     def backward(self, grad: Tensor) -> Tensor:
@@ -256,9 +283,14 @@ class Dropout(Layer):
 class Sequential(Layer):
     """Sequential container for layers"""
     
-    def __init__(self, *layers: Layer):
+    def __init__(self, layers=None):
         super().__init__()
-        self.layers = list(layers)
+        if layers is None:
+            self.layers = []
+        elif isinstance(layers, list):
+            self.layers = layers
+        else:
+            self.layers = list(layers)
         
     def forward(self, inputs: Tensor) -> Tensor:
         """Forward pass through all layers in sequence"""

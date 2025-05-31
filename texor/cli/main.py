@@ -19,10 +19,10 @@ from ..version import __version__
 console = Console()
 
 def show_header():
-    """Hiển thị header của Nexor với màu sắc"""
+    """Display Texor header"""
     console.print(Panel(
-        "[bold blue]Nexor[/bold blue] - Framework AI Toàn Diện\n" +
-        "[dim]Kết hợp Deep Learning, Machine Learning và AutoML[/dim]",
+        "[bold blue]Texor[/bold blue] - Native Deep Learning Framework\n" +
+        "[dim]Lightweight ML library with PyTorch-style API[/dim]",
         subtitle=f"v{__version__}",
         style="green"
     ))
@@ -30,34 +30,35 @@ def show_header():
 @click.group()
 @click.version_option(version=__version__)
 def cli():
-    """Nexor CLI - Framework AI toàn diện cho cộng đồng AI Việt Nam"""
+    """Texor CLI - Native deep learning framework"""
     show_header()
 
 @cli.command()
 def info():
-    """Hiển thị thông tin về môi trường và cài đặt"""
-    # Thông tin cơ bản
+    """Display information about environment and installation"""
+    # Basic information
     system_info = [
         ("Python", platform.python_version()),
         ("Platform", platform.platform()),
-        ("Nexor Version", __version__),
+        ("Texor Version", __version__),
     ]
     
-    # Thông tin về các module
+    # Available components
     modules = {
-        "Deep Learning": ["Neural Networks", "CNN", "RNN", "Transformer"],
-        "Machine Learning": ["Classification", "Regression", "Clustering"],
-        "AutoML": ["Architecture Search", "Hyperparameter Tuning"],
-        "Data Processing": ["Preprocessing", "Augmentation", "Visualization"]
+        "Core": ["Tensor", "Autograd", "Device Management", "Backend"],
+        "Neural Networks": ["Linear", "Conv2D", "MaxPool2D", "Sequential", "ReLU", "Sigmoid", "Tanh"],
+        "Loss Functions": ["MSELoss", "CrossEntropyLoss", "BCELoss", "L1Loss"],
+        "Optimizers": ["SGD", "Adam", "RMSprop", "AdamW", "Adadelta"],
+        "Data": ["Dataset", "DataLoader", "Transforms"]
     }
     
-    # Hiển thị thông tin hệ thống
-    console.print("\n[bold]Thông tin hệ thống:[/bold]")
+    # Display system information
+    console.print("\n[bold]System Information:[/bold]")
     for key, value in system_info:
         console.print(f"[yellow]{key}:[/yellow] {value}")
     
-    # Hiển thị thông tin module
-    console.print("\n[bold]Các module có sẵn:[/bold]")
+    # Display available modules
+    console.print("\n[bold]Available Modules:[/bold]")
     for category, items in modules.items():
         console.print(f"\n[cyan]{category}[/cyan]")
         for item in items:
@@ -67,7 +68,7 @@ def info():
 @cli.command()
 @click.argument('package_name', required=False)
 def list(package_name=None):
-    """Liệt kê các module đã cài đặt"""
+    """List installed modules"""
     categories = {
         "Deep Learning": [
             "Dense", "CNN", "RNN", "Transformer",
@@ -116,20 +117,29 @@ def check():
     # Kiểm tra Python version
     python_ok = sys.version_info >= (3, 8)
     
-    # Kiểm tra dependencies
+    # Kiểm tra dependencies cho native library
     try:
-        import tensorflow as tf
-        import torch
         import numpy as np
-        import sklearn
+        import numba
         deps_ok = True
-    except ImportError:
+        console.print("[green]✓[/green] NumPy và Numba đã sẵn sàng")
+        
+        # Kiểm tra GPU support (optional)
+        try:
+            import cupy as cp
+            console.print("[green]✓[/green] CuPy có sẵn - hỗ trợ GPU")
+        except ImportError:
+            console.print("[yellow]⚠[/yellow] CuPy không có - chỉ sử dụng CPU")
+            
+    except ImportError as e:
         deps_ok = False
+        console.print(f"[red]✗[/red] Thiếu dependency: {e}")
             
     if python_ok and deps_ok:
-        console.print("[green]✓[/green] Tất cả kiểm tra đều thành công!")
+        console.print("\n[green]✓[/green] Tất cả kiểm tra đều thành công!")
+        console.print("[dim]Texor native library sẵn sàng sử dụng![/dim]")
     else:
-        console.print("[red]✗[/red] Phát hiện một số vấn đề:")
+        console.print("\n[red]✗[/red] Phát hiện một số vấn đề:")
         if not python_ok:
             console.print("  [red]•[/red] Yêu cầu Python 3.8 trở lên")
         if not deps_ok:

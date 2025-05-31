@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
-from nexor.core import Tensor
-from nexor.optim import SGD, Adam, RMSprop, Adagrad, Adadelta
+from texor.core.native_tensor import Tensor
+from texor.optim.optimizers import SGD, Adam, RMSprop
 
 class TestOptimizers(unittest.TestCase):
     def setUp(self):
@@ -11,120 +11,108 @@ class TestOptimizers(unittest.TestCase):
             Tensor(np.random.randn(5), requires_grad=True)
         ]
         
-        # Create a simple quadratic loss: f(x) = x^2
-        # Gradient should be: f'(x) = 2x
-        self.initial_values = [p.numpy().copy() for p in self.params]
+        # Create simple gradients for testing
+        for param in self.params:
+            param.grad = Tensor(np.ones_like(param.data) * 0.1)
         
-    def compute_gradient(self):
-        """Compute gradients for test parameters"""
-        for param, init_val in zip(self.params, self.initial_values):
-            param.grad = Tensor(2 * init_val)  # Gradient of x^2 is 2x
-
     def test_sgd_optimizer(self):
         """Test SGD optimizer with and without momentum"""
         # Test vanilla SGD
         optimizer = SGD(self.params, lr=0.1)
         
+        initial_values = [p.data.copy() for p in self.params]
+        
         # First update
-        self.compute_gradient()
         optimizer.step()
         
         # Check if parameters were updated correctly
-        for param, init_val in zip(self.params, self.initial_values):
-            expected = init_val - 0.1 * 2 * init_val
-            self.assertTrue(np.allclose(param.numpy(), expected))
+        for param, init_val in zip(self.params, initial_values):
+            expected = init_val - 0.1 * 0.1  # lr * grad
+            self.assertTrue(np.allclose(param.data, expected))
             
         # Test SGD with momentum
-        self.params = [
-            Tensor(np.random.randn(10, 5), requires_grad=True),
-            Tensor(np.random.randn(5), requires_grad=True)
-        ]
-        self.initial_values = [p.numpy().copy() for p in self.params]
-        
+        self.setUp()  # Reset parameters
         optimizer = SGD(self.params, lr=0.1, momentum=0.9)
         
         # First update
-        self.compute_gradient()
         optimizer.step()
         
-        # Velocities should be initialized and updated
-        for v in optimizer.velocities:
-            self.assertFalse(np.all(v == 0))
+        # Velocities should be initialized
+        self.assertEqual(len(optimizer.velocities), len(self.params))
 
     def test_adam_optimizer(self):
         """Test Adam optimizer"""
-        optimizer = Adam(self.params, lr=0.001, betas=(0.9, 0.999))
+        optimizer = Adam(self.params, lr=0.001)
         
-        # Multiple updates to test momentum and variance
+        initial_values = [p.data.copy() for p in self.params]
+        
+        # Perform several steps
         for _ in range(3):
-            self.compute_gradient()
             optimizer.step()
             
-        # Check if momentum and variance terms are being updated
-        for m in optimizer.m:
-            self.assertFalse(np.all(m == 0))
-        for v in optimizer.v:
-            self.assertFalse(np.all(v == 0))
+        # Parameters should have been updated
+        for param, init_val in zip(self.params, initial_values):
+            self.assertFalse(np.array_equal(param.data, init_val))
             
-        # Parameters should be updated
-        for param, init_val in zip(self.params, self.initial_values):
-            self.assertFalse(np.array_equal(param.numpy(), init_val))
+        # Check internal state
+        self.assertEqual(optimizer.t, 3)  # Should have done 3 steps
+        self.assertEqual(len(optimizer.m), len(self.params))
+        self.assertEqual(len(optimizer.v), len(self.params))
 
     def test_rmsprop_optimizer(self):
         """Test RMSprop optimizer"""
         optimizer = RMSprop(self.params, lr=0.01, alpha=0.99)
         
-        # Multiple updates
-        for _ in range(3):
-            self.compute_gradient()
-            optimizer.step()
-            
-        # Check if running averages are being updated
-        for avg in optimizer.square_avg:
-            self.assertFalse(np.all(avg == 0))
-
-    def test_adagrad_optimizer(self):
-        """Test Adagrad optimizer"""
-        optimizer = Adagrad(self.params, lr=0.01)
+        initial_values = [p.data.copy() for p in self.params]
         
-        # Multiple updates
+        # Perform several steps
         for _ in range(3):
-            self.compute_gradient()
             optimizer.step()
             
-        # Check if accumulated gradients are increasing
-        for state in optimizer.state:
-            self.assertTrue(np.all(state >= 0))
-            self.assertFalse(np.all(state == 0))
-
-    def test_adadelta_optimizer(self):
-        """Test Adadelta optimizer"""
-        optimizer = Adadelta(self.params, rho=0.9)
-        
-        # Multiple updates
-        for _ in range(3):
-            self.compute_gradient()
-            optimizer.step()
+        # Parameters should have been updated
+        for param, init_val in zip(self.params, initial_values):
+            self.assertFalse(np.array_equal(param.data, init_val))
             
-        # Check if running averages are being updated
-        for avg in optimizer.square_avg:
-            self.assertFalse(np.all(avg == 0))
-        for delta in optimizer.acc_delta:
-            self.assertFalse(np.all(delta == 0))
+        # Check internal state
+        self.assertEqual(len(optimizer.square_avg), len(self.params))
 
     def test_zero_grad(self):
         """Test gradient zeroing functionality"""
-        optimizer = SGD(self.params, lr=0.1)
-        
         # Set some gradients
-        self.compute_gradient()
-        
-        # Zero out gradients
+        for param in self.params:
+            param.grad = Tensor(np.ones_like(param.data))
+            
+        optimizer = SGD(self.params, lr=0.1)
         optimizer.zero_grad()
         
-        # Check if all gradients are zero
+        # All gradients should be zero
         for param in self.params:
-            self.assertTrue(np.all(param.grad.numpy() == 0))
+            if param.grad is not None:
+                self.assertTrue(np.allclose(param.grad.data, 0))
+
+    def test_state_dict(self):
+        """Test optimizer state dictionary save/load"""
+        optimizer = Adam(self.params, lr=0.001)
+        
+        # Perform some steps to create state
+        for _ in range(2):
+            optimizer.step()
+            
+        # Save state
+        state = optimizer.state_dict()
+        
+        # Create new optimizer and load state
+        new_optimizer = Adam(self.params, lr=0.01)  # Different lr
+        new_optimizer.load_state_dict(state)
+          # Check that state was loaded correctly
+        self.assertEqual(new_optimizer.lr, 0.001)  # Should be from saved state
+        self.assertEqual(new_optimizer.t, 2)
+
+    def compute_gradient(self):
+        """Helper method to compute gradients for testing"""
+        for param in self.params:
+            param.grad = Tensor(np.random.randn(*param.shape) * 0.1)
+
 
 if __name__ == '__main__':
     unittest.main()

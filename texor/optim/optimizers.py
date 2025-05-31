@@ -1,7 +1,6 @@
 from typing import List, Tuple, Optional
 import numpy as np
-from ..core import Tensor
-from ..core.backend import backend
+from ..core.native_tensor import Tensor
 
 class Optimizer:
     """Base class for all optimizers"""
@@ -14,7 +13,7 @@ class Optimizer:
         """Reset gradients to zero"""
         for param in self.params:
             if param.grad is not None:
-                param.grad.fill(0)
+                param.grad.data.fill(0)
                 
     def step(self) -> None:
         """Update parameters using gradients"""
@@ -38,17 +37,17 @@ class SGD(Optimizer):
         self.momentum = momentum
         self.weight_decay = weight_decay
         self.nesterov = nesterov
-        self.velocities = [np.zeros_like(p.numpy()) for p in params]
+        self.velocities = [np.zeros_like(p.data) for p in params]
         
     def step(self) -> None:
         for i, param in enumerate(self.params):
             if param.grad is None:
                 continue
                 
-            grad = param.grad.numpy()
+            grad = param.grad.data.copy()
             
             if self.weight_decay != 0:
-                grad = grad + self.weight_decay * param.numpy()
+                grad = grad + self.weight_decay * param.data
                 
             if self.momentum != 0:
                 velocity = self.velocities[i]
@@ -93,13 +92,220 @@ class Adam(Optimizer):
         self.eps = eps
         self.weight_decay = weight_decay
         self.amsgrad = amsgrad
-        
         self.t = 0
-        self.m = [np.zeros_like(p.numpy()) for p in params]  # First moment
-        self.v = [np.zeros_like(p.numpy()) for p in params]  # Second moment
-        self.v_max = [np.zeros_like(p.numpy()) for p in params] if amsgrad else None
+        self.m = [np.zeros_like(p.data) for p in params]  # First moment
+        self.v = [np.zeros_like(p.data) for p in params]  # Second moment
+        self.v_max = [np.zeros_like(p.data) for p in params] if amsgrad else None
         
     def step(self) -> None:
+        self.t += 1
+        
+        for i, param in enumerate(self.params):
+            if param.grad is None:
+                continue
+                
+            grad = param.grad.data.copy()
+            
+            if self.weight_decay != 0:
+                grad = grad + self.weight_decay * param.data
+                
+            # Update biased first moment estimate
+            self.m[i] = self.betas[0] * self.m[i] + (1 - self.betas[0]) * grad
+            
+            # Update biased second raw moment estimate
+            self.v[i] = self.betas[1] * self.v[i] + (1 - self.betas[1]) * (grad ** 2)
+            
+            # Compute bias-corrected first moment estimate
+            m_hat = self.m[i] / (1 - self.betas[0] ** self.t)
+            
+            # Compute bias-corrected second raw moment estimate
+            v_hat = self.v[i] / (1 - self.betas[1] ** self.t)
+            
+            if self.amsgrad:
+                # Maintain the maximum of all 2nd moment running avg. till now
+                self.v_max[i] = np.maximum(self.v_max[i], v_hat)
+                denom = np.sqrt(self.v_max[i]) + self.eps
+            else:
+                denom = np.sqrt(v_hat) + self.eps
+                
+            param.data = param.data - self.lr * m_hat / denom
+            
+    def state_dict(self) -> dict:
+        return {
+            **super().state_dict(),
+            'betas': self.betas,
+            'eps': self.eps,
+            'weight_decay': self.weight_decay,
+            'amsgrad': self.amsgrad,
+            't': self.t,
+            'm': [m.copy() for m in self.m],
+            'v': [v.copy() for v in self.v],
+            'v_max': [v.copy() for v in self.v_max] if self.amsgrad else None
+        }
+        
+    def load_state_dict(self, state_dict: dict) -> None:
+        super().load_state_dict(state_dict)
+        self.betas = state_dict['betas']
+        self.eps = state_dict['eps']
+        self.weight_decay = state_dict['weight_decay']
+        self.amsgrad = state_dict['amsgrad']
+        self.t = state_dict['t']
+        self.m = [m.copy() for m in state_dict['m']]
+        self.v = [v.copy() for v in state_dict['v']]
+        if self.amsgrad:
+            self.v_max = [v.copy() for v in state_dict['v_max']]
+
+class RMSprop(Optimizer):
+    """RMSprop optimizer"""
+    
+    def __init__(self, params: List[Tensor], lr: float = 0.01,
+                 alpha: float = 0.99, eps: float = 1e-8,
+                 weight_decay: float = 0, momentum: float = 0,
+                 centered: bool = False):
+        super().__init__(params, lr)
+        self.alpha = alpha
+        self.eps = eps
+        self.weight_decay = weight_decay
+        self.momentum = momentum
+        self.centered = centered
+        
+        self.square_avg = [np.zeros_like(p.data) for p in params]
+        self.momentum_buffer = [np.zeros_like(p.data) for p in params] if momentum != 0 else None
+        self.grad_avg = [np.zeros_like(p.data) for p in params] if centered else None
+        
+    def step(self) -> None:
+        for i, param in enumerate(self.params):
+            if param.grad is None:
+                continue
+                
+            grad = param.grad.data.copy()
+            
+            if self.weight_decay != 0:
+                grad = grad + self.weight_decay * param.data
+                
+            # Update running average of squared gradients
+            self.square_avg[i] = self.alpha * self.square_avg[i] + (1 - self.alpha) * (grad ** 2)
+            
+            if self.centered:
+                # Update running average of gradients
+                self.grad_avg[i] = self.alpha * self.grad_avg[i] + (1 - self.alpha) * grad
+                avg = self.square_avg[i] - self.grad_avg[i] ** 2
+            else:
+                avg = self.square_avg[i]
+                
+            if self.momentum > 0:
+                self.momentum_buffer[i] = self.momentum * self.momentum_buffer[i] + grad / (np.sqrt(avg) + self.eps)
+                param.data = param.data - self.lr * self.momentum_buffer[i]
+            else:
+                param.data = param.data - self.lr * grad / (np.sqrt(avg) + self.eps)
+                
+    def state_dict(self) -> dict:
+        state = {
+            **super().state_dict(),
+            'alpha': self.alpha,
+            'eps': self.eps,
+            'weight_decay': self.weight_decay,
+            'momentum': self.momentum,
+            'centered': self.centered,
+            'square_avg': [s.copy() for s in self.square_avg]
+        }
+        if self.momentum > 0:
+            state['momentum_buffer'] = [m.copy() for m in self.momentum_buffer]
+        if self.centered:
+            state['grad_avg'] = [g.copy() for g in self.grad_avg]
+        return state
+        
+    def load_state_dict(self, state_dict: dict) -> None:
+        super().load_state_dict(state_dict)
+        self.alpha = state_dict['alpha']
+        self.eps = state_dict['eps']
+        self.weight_decay = state_dict['weight_decay']
+        self.momentum = state_dict['momentum']
+        self.centered = state_dict['centered']
+        self.square_avg = [s.copy() for s in state_dict['square_avg']]
+        if self.momentum > 0:
+            self.momentum_buffer = [m.copy() for m in state_dict['momentum_buffer']]
+        if self.centered:
+            self.grad_avg = [g.copy() for g in state_dict['grad_avg']]
+
+class AdamW(Optimizer):
+    """AdamW optimizer with decoupled weight decay"""
+    
+    def __init__(self, params: List[Tensor], lr: float = 0.001,
+                 betas: Tuple[float, float] = (0.9, 0.999),
+                 eps: float = 1e-8, weight_decay: float = 0.01,
+                 amsgrad: bool = False):
+        super().__init__(params, lr)
+        if not (0.0 <= betas[0] < 1.0 and 0.0 <= betas[1] < 1.0):
+            raise ValueError("Invalid beta parameters")
+        self.betas = betas
+        self.eps = eps
+        self.weight_decay = weight_decay
+        self.amsgrad = amsgrad
+        
+        self.t = 0
+        self.m = [np.zeros_like(p.data) for p in params]  # First moment
+        self.v = [np.zeros_like(p.data) for p in params]  # Second moment
+        self.v_max = [np.zeros_like(p.data) for p in params] if amsgrad else None
+        
+    def step(self) -> None:
+        self.t += 1
+        
+        for i, param in enumerate(self.params):
+            if param.grad is None:
+                continue
+                
+            grad = param.grad.data.copy()
+            
+            # Update biased first moment estimate
+            self.m[i] = self.betas[0] * self.m[i] + (1 - self.betas[0]) * grad
+            
+            # Update biased second raw moment estimate
+            self.v[i] = self.betas[1] * self.v[i] + (1 - self.betas[1]) * (grad ** 2)
+            
+            # Compute bias-corrected first moment estimate
+            m_hat = self.m[i] / (1 - self.betas[0] ** self.t)
+            
+            # Compute bias-corrected second raw moment estimate
+            v_hat = self.v[i] / (1 - self.betas[1] ** self.t)
+            
+            if self.amsgrad:
+                # Maintain the maximum of all 2nd moment running avg. till now
+                self.v_max[i] = np.maximum(self.v_max[i], v_hat)
+                denom = np.sqrt(self.v_max[i]) + self.eps
+            else:
+                denom = np.sqrt(v_hat) + self.eps
+                
+            # Apply weight decay (decoupled)
+            param.data = param.data * (1 - self.lr * self.weight_decay)
+            
+            # Apply gradient update
+            param.data = param.data - self.lr * m_hat / denom
+            
+    def state_dict(self) -> dict:
+        return {
+            **super().state_dict(),
+            'betas': self.betas,
+            'eps': self.eps,
+            'weight_decay': self.weight_decay,
+            'amsgrad': self.amsgrad,
+            't': self.t,
+            'm': [m.copy() for m in self.m],
+            'v': [v.copy() for v in self.v],
+            'v_max': [v.copy() for v in self.v_max] if self.amsgrad else None
+        }
+        
+    def load_state_dict(self, state_dict: dict) -> None:
+        super().load_state_dict(state_dict)
+        self.betas = state_dict['betas']
+        self.eps = state_dict['eps']
+        self.weight_decay = state_dict['weight_decay']
+        self.amsgrad = state_dict['amsgrad']
+        self.t = state_dict['t']
+        self.m = [m.copy() for m in state_dict['m']]
+        self.v = [v.copy() for v in state_dict['v']]
+        if self.amsgrad:
+            self.v_max = [v.copy() for v in state_dict['v_max']]
         self.t += 1
         beta1, beta2 = self.betas
         

@@ -1,113 +1,45 @@
-"""Neural network module for Nexor"""
+"""Neural network module for Texor"""
+
+# Import functional module
 from . import functional as F
 
+# Import layers
 from .layers import (
     Layer,
     Linear,
-    Conv2d,
-    ConvTranspose2d,
-    MaxPool2d,
-    BatchNorm2d,
-    AdaptiveAvgPool2d,
-    Dropout,
-    Sequential,
-    Reshape,
-    Flatten,
-    Embedding,
-    LayerNorm
+    Conv2D,
+    MaxPool2D,
+    BatchNorm2D,
+    Sequential
 )
 
+# Import activations
 from .activations import (
     ReLU,
-    Sigmoid,
-    Tanh,
-    LeakyReLU,
-    ELU,
-    Softmax,
-    GELU
+    Sigmoid
 )
 
+# Import loss functions
 from .loss import (
     MSELoss,
     CrossEntropyLoss,
     BCELoss,
     L1Loss,
-    HuberLoss
+    HuberLoss,
+    SmoothL1Loss,
+    KLDivLoss,
+    get_loss_function
 )
 
+# Import model
 from .model import Model
 
-from .models import (
-    # ResNet models
-    ResNet,
-    resnet18,
-    resnet34,
-    resnet50,
-    resnet101,
-    resnet152,
-    
-    # Transformer models
-    TransformerEncoder,
-    BERT,
-    bert_base_uncased,
-    bert_large_uncased,
-    
-    # GAN models
-    GAN,
-    DCGAN,
-    create_dcgan
-)
-
+# Define what's available when using "from texor.nn import *"
 __all__ = [
-    # Functional interface
     'F',
-    
-    # Base classes
-    'Layer',
-    'Model',
-    
-    # Basic layers
-    'Linear',
-    'Conv2d',
-    'ConvTranspose2d',
-    'MaxPool2d',
-    'BatchNorm2d',
-    'AdaptiveAvgPool2d',
-    'Dropout',
-    'Sequential',
-    'Reshape',
-    'Flatten',
-    'Embedding',
-    'LayerNorm',
-    
-    # Activation functions
-    'ReLU',
-    'Sigmoid', 
-    'Tanh',
-    'LeakyReLU',
-    'ELU',
-    'Softmax',
-    'GELU',
-    
-    # Loss functions
-    'MSELoss',
-    'CrossEntropyLoss',
-    'BCELoss',
-    'L1Loss',
-    'HuberLoss',
-    
-    # Pre-built models
-    'ResNet',
-    'resnet18',
-    'resnet34',
-    'resnet50',
-    'resnet101',
-    'resnet152',
-    'TransformerEncoder',
-    'BERT',
-    'bert_base_uncased',
-    'bert_large_uncased',
-    'GAN',
-    'DCGAN',
-    'create_dcgan'
+    'Layer', 'Linear', 'Conv2D', 'MaxPool2D', 'BatchNorm2D', 'Sequential',
+    'ReLU', 'Sigmoid',
+    'MSELoss', 'CrossEntropyLoss', 'BCELoss', 'L1Loss', 'HuberLoss', 
+    'SmoothL1Loss', 'KLDivLoss', 'get_loss_function',
+    'Model'
 ]
