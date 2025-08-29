@@ -1,0 +1,2 @@
+[console_scripts]
+texor = texor.cli.main:main
