@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Dependency checker for Nexor library.
+Dependency checker for Texor library.
 Verifies import structure and detects potential circular dependencies.
 """
 

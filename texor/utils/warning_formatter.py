@@ -5,15 +5,15 @@ from rich.panel import Panel
 
 console = Console()
 
-class NexorWarningFormatter(logging.Handler):
-    """Handler tùy chỉnh để định dạng các cảnh báo theo style của Nexor"""
+class TexorWarningFormatter(logging.Handler):
+    """Handler tùy chỉnh để định dạng các cảnh báo theo style của Texor"""
     
     def __init__(self):
         super().__init__()
         self.setLevel(logging.INFO)
         
     def emit(self, record):
-        """Định dạng và hiển thị cảnh báo với style của Nexor"""
+        """Định dạng và hiển thị cảnh báo với style của Texor"""
         if "tensorflow" in record.name.lower():
             # Định dạng cảnh báo TensorFlow
             msg = record.getMessage()
@@ -40,8 +40,8 @@ def setup_warning_handler():
     root = logging.getLogger()
     root.handlers = []
     
-    # Thêm handler tùy chỉnh của Nexor
-    handler = NexorWarningFormatter()
+            # Thêm handler tùy chỉnh của Texor
+        handler = TexorWarningFormatter()
     root.addHandler(handler)
     
     # Cập nhật TensorFlow logger

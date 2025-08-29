@@ -1,5 +1,4 @@
 LICENSE
-MANIFEST.in
 README.md
 setup.py
 examples/demo_native_performance.py
