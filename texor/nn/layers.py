@@ -394,10 +394,847 @@ class Reshape(Layer):
 
 class Flatten(Layer):
     """Flatten layer"""
-    
+
     def forward(self, inputs: Tensor) -> Tensor:
         batch_size = inputs.shape[0]
         return inputs.reshape(batch_size, -1)
+
+
+class MultiheadAttention(Layer):
+    """Multi-head attention layer
+    
+    Args:
+        embed_dim: Total dimension of the model
+        num_heads: Number of parallel attention heads
+        dropout: Dropout probability
+        bias: If True, add bias to input projections
+        add_bias_kv: If True, add bias to key and value sequences
+        kdim: Total number of features for keys (None = use embed_dim)
+        vdim: Total number of features for values (None = use embed_dim)
+    """
+
+    def __init__(self, embed_dim: int, num_heads: int, dropout: float = 0.0,
+                 bias: bool = True, add_bias_kv: bool = False,
+                 kdim: Optional[int] = None, vdim: Optional[int] = None):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.dropout = dropout
+        self.kdim = kdim if kdim is not None else embed_dim
+        self.vdim = vdim if vdim is not None else embed_dim
+        
+        assert embed_dim % num_heads == 0, "embed_dim must be divisible by num_heads"
+        self.head_dim = embed_dim // num_heads
+        
+        # Projection matrices
+        self.q_proj = Linear(embed_dim, embed_dim, bias=bias)
+        self.k_proj = Linear(self.kdim, embed_dim, bias=bias)
+        self.v_proj = Linear(self.vdim, embed_dim, bias=bias)
+        self.out_proj = Linear(embed_dim, embed_dim, bias=bias)
+        
+        self.dropout_layer = Dropout(dropout)
+        
+    def forward(self, query: Tensor, key: Tensor, value: Tensor,
+                attn_mask: Optional[Tensor] = None,
+                key_padding_mask: Optional[Tensor] = None) -> Tuple[Tensor, Optional[Tensor]]:
+        """Forward pass
+        
+        Args:
+            query: Query tensor of shape (L, N, E) where L is target sequence length
+            key: Key tensor of shape (S, N, E) where S is source sequence length
+            value: Value tensor of shape (S, N, E)
+            attn_mask: Attention mask
+            key_padding_mask: Padding mask for keys
+        
+        Returns:
+            Tuple of (output, attention_weights)
+        """
+        # Handle different input shapes
+        if query.data.ndim == 3:
+            # (L, N, E) - already in correct format
+            tgt_len, bsz, _ = query.shape
+        elif query.data.ndim == 2:
+            # (N, E) - single query
+            query = query.unsqueeze(0)
+            tgt_len, bsz, _ = query.shape
+        else:
+            raise ValueError(f"query must be 2D or 3D, got {query.data.ndim}D")
+        
+        src_len = key.shape[0]
+        
+        # Project query, key, value
+        q = self.q_proj(query)  # (L, N, E)
+        k = self.k_proj(key)    # (S, N, E)
+        v = self.v_proj(value)  # (S, N, E)
+        
+        # Reshape for multi-head attention: (L, N, E) -> (L, N, H, D) -> (N, H, L, D)
+        q = q.view(tgt_len, bsz, self.num_heads, self.head_dim).permute(1, 2, 0, 3)
+        k = k.view(src_len, bsz, self.num_heads, self.head_dim).permute(1, 2, 0, 3)
+        v = v.view(src_len, bsz, self.num_heads, self.head_dim).permute(1, 2, 0, 3)
+        
+        # Scaled dot-product attention
+        scale = np.sqrt(self.head_dim)
+        attn = (q @ k.transpose(-2, -1)) / scale  # (N, H, L, S)
+        
+        # Apply masks
+        if attn_mask is not None:
+            attn = attn + attn_mask
+        
+        if key_padding_mask is not None:
+            attn = attn.masked_fill(key_padding_mask.unsqueeze(1).unsqueeze(2), float('-inf'))
+        
+        # Softmax and dropout
+        attn_weights = softmax(attn, dim=-1)
+        attn_weights = self.dropout_layer(attn_weights)
+        
+        # Apply attention to values
+        out = attn_weights @ v  # (N, H, L, D)
+        
+        # Reshape output: (N, H, L, D) -> (N, L, E)
+        out = out.permute(2, 0, 1, 3).contiguous().view(tgt_len, bsz, self.embed_dim)
+        
+        # Final projection
+        out = self.out_proj(out)
+        
+        return out, attn_weights
+
+
+class TransformerEncoderLayer(Layer):
+    """Transformer encoder layer
+    
+    Args:
+        d_model: Model dimension
+        nhead: Number of attention heads
+        dim_feedforward: Dimension of feedforward network
+        dropout: Dropout probability
+        activation: Activation function ('relu' or 'gelu')
+    """
+
+    def __init__(self, d_model: int, nhead: int, dim_feedforward: int = 2048,
+                 dropout: float = 0.1, activation: str = 'relu'):
+        super().__init__()
+        self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.linear1 = Linear(d_model, dim_feedforward)
+        self.dropout = Dropout(dropout)
+        self.linear2 = Linear(dim_feedforward, d_model)
+        
+        self.norm1 = LayerNorm(d_model)
+        self.norm2 = LayerNorm(d_model)
+        self.dropout1 = Dropout(dropout)
+        self.dropout2 = Dropout(dropout)
+        self.activation = activation
+
+    def forward(self, src: Tensor, src_mask: Optional[Tensor] = None,
+                src_key_padding_mask: Optional[Tensor] = None) -> Tensor:
+        """Forward pass"""
+        # Self-attention block
+        src2, _ = self.self_attn(src, src, src, attn_mask=src_mask,
+                                  key_padding_mask=src_key_padding_mask)
+        src = src + self.dropout1(src2)
+        src = self.norm1(src)
+        
+        # Feedforward block
+        src2 = self.linear2(self.dropout(gelu(self.linear1(src)) if self.activation == 'gelu'
+                                          else relu(self.linear1(src))))
+        src = src + self.dropout2(src2)
+        src = self.norm2(src)
+        
+        return src
+
+
+class TransformerDecoderLayer(Layer):
+    """Transformer decoder layer
+    
+    Args:
+        d_model: Model dimension
+        nhead: Number of attention heads
+        dim_feedforward: Dimension of feedforward network
+        dropout: Dropout probability
+        activation: Activation function
+    """
+
+    def __init__(self, d_model: int, nhead: int, dim_feedforward: int = 2048,
+                 dropout: float = 0.1, activation: str = 'relu'):
+        super().__init__()
+        self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.multihead_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
+        
+        self.linear1 = Linear(d_model, dim_feedforward)
+        self.dropout = Dropout(dropout)
+        self.linear2 = Linear(dim_feedforward, d_model)
+        
+        self.norm1 = LayerNorm(d_model)
+        self.norm2 = LayerNorm(d_model)
+        self.norm3 = LayerNorm(d_model)
+        self.dropout1 = Dropout(dropout)
+        self.dropout2 = Dropout(dropout)
+        self.dropout3 = Dropout(dropout)
+        self.activation = activation
+
+    def forward(self, tgt: Tensor, memory: Tensor, tgt_mask: Optional[Tensor] = None,
+                memory_mask: Optional[Tensor] = None,
+                tgt_key_padding_mask: Optional[Tensor] = None,
+                memory_key_padding_mask: Optional[Tensor] = None) -> Tensor:
+        """Forward pass"""
+        # Self-attention
+        tgt2, _ = self.self_attn(tgt, tgt, tgt, attn_mask=tgt_mask,
+                                  key_padding_mask=tgt_key_padding_mask)
+        tgt = tgt + self.dropout1(tgt2)
+        tgt = self.norm1(tgt)
+        
+        # Cross-attention
+        tgt2, _ = self.multihead_attn(tgt, memory, memory, attn_mask=memory_mask,
+                                       key_padding_mask=memory_key_padding_mask)
+        tgt = tgt + self.dropout2(tgt2)
+        tgt = self.norm2(tgt)
+        
+        # Feedforward
+        tgt2 = self.linear2(self.dropout(gelu(self.linear1(tgt)) if self.activation == 'gelu'
+                                          else relu(self.linear1(tgt))))
+        tgt = tgt + self.dropout3(tgt2)
+        tgt = self.norm3(tgt)
+        
+        return tgt
+
+
+class TransformerEncoder(Layer):
+    """Transformer encoder
+    
+    Args:
+        num_layers: Number of encoder layers
+        d_model: Model dimension
+        nhead: Number of attention heads
+        dim_feedforward: Feedforward dimension
+        dropout: Dropout probability
+    """
+
+    def __init__(self, num_layers: int, d_model: int, nhead: int,
+                 dim_feedforward: int = 2048, dropout: float = 0.1):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            TransformerEncoderLayer(d_model, nhead, dim_feedforward, dropout)
+            for _ in range(num_layers)
+        ])
+        self.num_layers = num_layers
+
+    def forward(self, src: Tensor, mask: Optional[Tensor] = None,
+                src_key_padding_mask: Optional[Tensor] = None) -> Tensor:
+        output = src
+        for layer in self.layers:
+            output = layer(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask)
+        return output
+
+
+class TransformerDecoder(Layer):
+    """Transformer decoder
+    
+    Args:
+        num_layers: Number of decoder layers
+        d_model: Model dimension
+        nhead: Number of attention heads
+        dim_feedforward: Feedforward dimension
+        dropout: Dropout probability
+    """
+
+    def __init__(self, num_layers: int, d_model: int, nhead: int,
+                 dim_feedforward: int = 2048, dropout: float = 0.1):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            TransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout)
+            for _ in range(num_layers)
+        ])
+        self.num_layers = num_layers
+
+    def forward(self, tgt: Tensor, memory: Tensor, tgt_mask: Optional[Tensor] = None,
+                memory_mask: Optional[Tensor] = None,
+                tgt_key_padding_mask: Optional[Tensor] = None,
+                memory_key_padding_mask: Optional[Tensor] = None) -> Tensor:
+        output = tgt
+        for layer in self.layers:
+            output = layer(output, memory, tgt_mask=tgt_mask, memory_mask=memory_mask,
+                          tgt_key_padding_mask=tgt_key_padding_mask,
+                          memory_key_padding_mask=memory_key_padding_mask)
+        return output
+
+
+class Transformer(Layer):
+    """Full Transformer model
+    
+    Args:
+        d_model: Model dimension
+        nhead: Number of attention heads
+        num_encoder_layers: Number of encoder layers
+        num_decoder_layers: Number of decoder layers
+        dim_feedforward: Feedforward dimension
+        dropout: Dropout probability
+    """
+
+    def __init__(self, d_model: int = 512, nhead: int = 8,
+                 num_encoder_layers: int = 6, num_decoder_layers: int = 6,
+                 dim_feedforward: int = 2048, dropout: float = 0.1):
+        super().__init__()
+        self.encoder = TransformerEncoder(num_encoder_layers, d_model, nhead,
+                                          dim_feedforward, dropout)
+        self.decoder = TransformerDecoder(num_decoder_layers, d_model, nhead,
+                                          dim_feedforward, dropout)
+
+    def forward(self, src: Tensor, tgt: Tensor, src_mask: Optional[Tensor] = None,
+                tgt_mask: Optional[Tensor] = None,
+                memory_mask: Optional[Tensor] = None,
+                src_key_padding_mask: Optional[Tensor] = None,
+                tgt_key_padding_mask: Optional[Tensor] = None,
+                memory_key_padding_mask: Optional[Tensor] = None) -> Tensor:
+        memory = self.encoder(src, mask=src_mask, src_key_padding_mask=src_key_padding_mask)
+        output = self.decoder(tgt, memory, tgt_mask=tgt_mask, memory_mask=memory_mask,
+                             tgt_key_padding_mask=tgt_key_padding_mask,
+                             memory_key_padding_mask=memory_key_padding_mask)
+        return output
+
+
+class PixelShuffle(Layer):
+    """Pixel shuffle upsampling layer
+    
+    Args:
+        upscale_factor: Factor to increase spatial resolution by
+    """
+
+    def __init__(self, upscale_factor: int):
+        super().__init__()
+        self.upscale_factor = upscale_factor
+
+    def forward(self, inputs: Tensor) -> Tensor:
+        """Forward pass"""
+        return pixel_shuffle(inputs, self.upscale_factor)
+
+
+class Upsample(Layer):
+    """Upsampling layer
+    
+    Args:
+        size: Output size (optional)
+        scale_factor: Scale factor (optional)
+        mode: Interpolation mode ('nearest', 'linear', 'bilinear', 'bicubic', 'trilinear')
+    """
+
+    def __init__(self, size: Optional[Union[int, Tuple[int, ...]]] = None,
+                 scale_factor: Optional[Union[float, Tuple[float, ...]]] = None,
+                 mode: str = 'nearest'):
+        super().__init__()
+        self.size = size
+        self.scale_factor = scale_factor
+        self.mode = mode
+
+    def forward(self, inputs: Tensor) -> Tensor:
+        """Forward pass"""
+        return upsample(inputs, self.size, self.scale_factor, self.mode)
+
+
+class LazyLinear(Layer):
+    """Lazy linear layer that infers input features from first input
+    
+    Args:
+        out_features: Number of output features
+        bias: If True, add bias
+    """
+
+    def __init__(self, out_features: int, bias: bool = True):
+        super().__init__()
+        self.out_features = out_features
+        self.bias = bias
+        self.weight = None
+        self.bias_tensor = None
+        self._initialized = False
+
+    def forward(self, inputs: Tensor) -> Tensor:
+        """Forward pass"""
+        if not self._initialized:
+            in_features = inputs.shape[-1]
+            scale = np.sqrt(2.0 / in_features)
+            self.weight = Tensor(
+                np.random.normal(0, scale, (self.out_features, in_features)),
+                requires_grad=True
+            )
+            if self.bias:
+                self.bias_tensor = Tensor(np.zeros(self.out_features), requires_grad=True)
+            self._initialized = True
+        
+        output = inputs @ self.weight.T
+        if self.bias_tensor is not None:
+            output = output + self.bias_tensor
+        return output
+
+
+class GroupNorm(Layer):
+    """Group normalization layer
+    
+    Args:
+        num_groups: Number of groups to split channels into
+        num_channels: Number of channels
+        eps: Small value for numerical stability
+    """
+
+    def __init__(self, num_groups: int, num_channels: int, eps: float = 1e-5):
+        super().__init__()
+        self.num_groups = num_groups
+        self.num_channels = num_channels
+        self.eps = eps
+        self.weight = Tensor(np.ones(num_channels), requires_grad=True)
+        self.bias = Tensor(np.zeros(num_channels), requires_grad=True)
+
+    def forward(self, inputs: Tensor) -> Tensor:
+        """Forward pass"""
+        return group_norm(inputs, self.num_groups, self.weight, self.bias, self.eps)
+
+
+class InstanceNorm1d(Layer):
+    """1D instance normalization layer"""
+
+    def __init__(self, num_features: int, eps: float = 1e-5, momentum: float = 0.1):
+        super().__init__()
+        self.num_features = num_features
+        self.eps = eps
+        self.momentum = momentum
+        self.weight = Tensor(np.ones(num_features), requires_grad=True)
+        self.bias = Tensor(np.zeros(num_features), requires_grad=True)
+        self.running_mean = Tensor(np.zeros(num_features), requires_grad=False)
+        self.running_var = Tensor(np.ones(num_features), requires_grad=False)
+
+    def forward(self, inputs: Tensor) -> Tensor:
+        """Forward pass"""
+        return instance_norm(inputs, self.running_mean, self.running_var,
+                            self.weight, self.bias, self.momentum, self.eps)
+
+
+class InstanceNorm2d(Layer):
+    """2D instance normalization layer"""
+
+    def __init__(self, num_features: int, eps: float = 1e-5, momentum: float = 0.1):
+        super().__init__()
+        self.num_features = num_features
+        self.eps = eps
+        self.momentum = momentum
+        self.weight = Tensor(np.ones(num_features), requires_grad=True)
+        self.bias = Tensor(np.zeros(num_features), requires_grad=True)
+        self.running_mean = Tensor(np.zeros(num_features), requires_grad=False)
+        self.running_var = Tensor(np.ones(num_features), requires_grad=False)
+
+    def forward(self, inputs: Tensor) -> Tensor:
+        """Forward pass"""
+        return instance_norm(inputs, self.running_mean, self.running_var,
+                            self.weight, self.bias, self.momentum, self.eps)
+
+
+class Dropout2D(Layer):
+    """2D Dropout layer (drops entire channels)"""
+
+    def __init__(self, p: float = 0.5):
+        super().__init__()
+        if not 0 <= p < 1:
+            raise ValueError("Dropout probability must be in range [0, 1)")
+        self.p = p
+        self.mask = None
+
+    def forward(self, inputs: Tensor) -> Tensor:
+        """Forward pass"""
+        if not self.training or self.p == 0:
+            return inputs
+        
+        # For 2D dropout, mask has shape (N, C, 1, 1)
+        self.mask = Tensor(
+            np.random.binomial(1, 1 - self.p, (inputs.shape[0], inputs.shape[1], 1, 1)).astype(np.float32)
+        )
+        return inputs * self.mask / (1 - self.p)
+
+
+class Dropout3D(Layer):
+    """3D Dropout layer (drops entire channels)"""
+
+    def __init__(self, p: float = 0.5):
+        super().__init__()
+        if not 0 <= p < 1:
+            raise ValueError("Dropout probability must be in range [0, 1)")
+        self.p = p
+        self.mask = None
+
+    def forward(self, inputs: Tensor) -> Tensor:
+        """Forward pass"""
+        if not self.training or self.p == 0:
+            return inputs
+        
+        # For 3D dropout, mask has shape (N, C, 1, 1, 1)
+        self.mask = Tensor(
+            np.random.binomial(1, 1 - self.p, (inputs.shape[0], inputs.shape[1], 1, 1, 1)).astype(np.float32)
+        )
+        return inputs * self.mask / (1 - self.p)
+
+
+class Conv1D(Layer):
+    """1D Convolution layer
+    
+    Args:
+        in_channels: Number of input channels
+        out_channels: Number of output channels
+        kernel_size: Size of the convolution kernel
+        stride: Stride of the convolution
+        padding: Padding added to input
+        bias: If True, add bias
+    """
+
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: int,
+                 stride: int = 1, padding: int = 0, bias: bool = True):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        
+        scale = np.sqrt(2.0 / (in_channels * kernel_size))
+        self.weight = Tensor(
+            np.random.normal(0, scale, (out_channels, in_channels, kernel_size)),
+            requires_grad=True
+        )
+        self.bias = Tensor(np.zeros(out_channels), requires_grad=True) if bias else None
+
+    def forward(self, inputs: Tensor) -> Tensor:
+        """Forward pass"""
+        return conv1d(inputs, self.weight, self.bias, self.stride, self.padding)
+
+
+class Conv3D(Layer):
+    """3D Convolution layer
+    
+    Args:
+        in_channels: Number of input channels
+        out_channels: Number of output channels
+        kernel_size: Size of the convolution kernel
+        stride: Stride of the convolution
+        padding: Padding added to input
+        bias: If True, add bias
+    """
+
+    def __init__(self, in_channels: int, out_channels: int,
+                 kernel_size: Union[int, Tuple[int, int, int]],
+                 stride: Union[int, Tuple[int, int, int]] = 1,
+                 padding: Union[int, Tuple[int, int, int]] = 0,
+                 bias: bool = True):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size if isinstance(kernel_size, tuple) else (kernel_size, kernel_size, kernel_size)
+        self.stride = stride if isinstance(stride, tuple) else (stride, stride, stride)
+        self.padding = padding if isinstance(padding, tuple) else (padding, padding, padding)
+        
+        scale = np.sqrt(2.0 / (in_channels * np.prod(self.kernel_size)))
+        self.weight = Tensor(
+            np.random.normal(0, scale, (out_channels, in_channels, *self.kernel_size)),
+            requires_grad=True
+        )
+        self.bias = Tensor(np.zeros(out_channels), requires_grad=True) if bias else None
+
+    def forward(self, inputs: Tensor) -> Tensor:
+        """Forward pass"""
+        return conv3d(inputs, self.weight, self.bias, self.stride, self.padding)
+
+
+class MaxPool3D(Layer):
+    """3D Max Pooling layer"""
+
+    def __init__(self, kernel_size: Union[int, Tuple[int, int, int]],
+                 stride: Optional[Union[int, Tuple[int, int, int]]] = None,
+                 padding: Union[int, Tuple[int, int, int]] = 0):
+        super().__init__()
+        self.kernel_size = kernel_size if isinstance(kernel_size, tuple) else (kernel_size, kernel_size, kernel_size)
+        self.stride = stride if stride is not None else self.kernel_size
+        self.stride = self.stride if isinstance(self.stride, tuple) else (self.stride, self.stride, self.stride)
+        self.padding = padding if isinstance(padding, tuple) else (padding, padding, padding)
+
+    def forward(self, inputs: Tensor) -> Tensor:
+        """Forward pass using native implementation"""
+        N, C, D, H, W = inputs.shape
+        kD, kH, kW = self.kernel_size
+        sD, sH, sW = self.stride
+        
+        D_out = (D + 2 * self.padding[0] - kD) // sD + 1
+        H_out = (H + 2 * self.padding[1] - kH) // sH + 1
+        W_out = (W + 2 * self.padding[2] - kW) // sW + 1
+        
+        result = np.zeros((N, C, D_out, H_out, W_out))
+        
+        for d in range(D_out):
+            for h in range(H_out):
+                for w in range(W_out):
+                    d_start = d * sD - self.padding[0]
+                    h_start = h * sH - self.padding[1]
+                    w_start = w * sW - self.padding[2]
+                    
+                    patch = inputs.data[:, :,
+                                     max(0, d_start):d_start + kD,
+                                     max(0, h_start):h_start + kH,
+                                     max(0, w_start):w_start + kW]
+                    result[:, :, d, h, w] = patch.max(axis=(2, 3, 4))
+        
+        return Tensor(result, requires_grad=inputs.requires_grad)
+
+
+class AvgPool3D(Layer):
+    """3D Average Pooling layer"""
+
+    def __init__(self, kernel_size: Union[int, Tuple[int, int, int]],
+                 stride: Optional[Union[int, Tuple[int, int, int]]] = None,
+                 padding: Union[int, Tuple[int, int, int]] = 0):
+        super().__init__()
+        self.kernel_size = kernel_size if isinstance(kernel_size, tuple) else (kernel_size, kernel_size, kernel_size)
+        self.stride = stride if stride is not None else self.kernel_size
+        self.stride = self.stride if isinstance(self.stride, tuple) else (self.stride, self.stride, self.stride)
+        self.padding = padding if isinstance(padding, tuple) else (padding, padding, padding)
+
+    def forward(self, inputs: Tensor) -> Tensor:
+        """Forward pass"""
+        N, C, D, H, W = inputs.shape
+        kD, kH, kW = self.kernel_size
+        sD, sH, sW = self.stride
+        
+        D_out = (D + 2 * self.padding[0] - kD) // sD + 1
+        H_out = (H + 2 * self.padding[1] - kH) // sH + 1
+        W_out = (W + 2 * self.padding[2] - kW) // sW + 1
+        
+        result = np.zeros((N, C, D_out, H_out, W_out))
+        
+        for d in range(D_out):
+            for h in range(H_out):
+                for w in range(W_out):
+                    d_start = d * sD - self.padding[0]
+                    h_start = h * sH - self.padding[1]
+                    w_start = w * sW - self.padding[2]
+                    
+                    patch = inputs.data[:, :,
+                                     max(0, d_start):min(D, d_start + kD),
+                                     max(0, h_start):min(H, h_start + kH),
+                                     max(0, w_start):min(W, w_start + kW)]
+                    result[:, :, d, h, w] = patch.mean(axis=(2, 3, 4))
+        
+        return Tensor(result, requires_grad=inputs.requires_grad)
+
+
+# Helper functions for layers
+def pixel_shuffle(x: Tensor, upscale_factor: int) -> Tensor:
+    """Pixel shuffle operation"""
+    N, C, H, W = x.shape
+    C_out = C // (upscale_factor ** 2)
+    H_out = H * upscale_factor
+    W_out = W * upscale_factor
+    
+    x_reshaped = x.data.reshape(N, C_out, upscale_factor, upscale_factor, H, W)
+    result = x_reshaped.permute(0, 1, 4, 2, 5, 3).reshape(N, C_out, H_out, W_out)
+    
+    return Tensor(result, requires_grad=x.requires_grad)
+
+
+def upsample(x: Tensor, size: Optional[Union[int, Tuple[int, ...]]] = None,
+             scale_factor: Optional[Union[float, Tuple[float, ...]]] = None,
+             mode: str = 'nearest') -> Tensor:
+    """Upsample tensor"""
+    if scale_factor is not None:
+        if isinstance(scale_factor, (int, float)):
+            scale_factors = (scale_factor, scale_factor)
+        else:
+            scale_factors = scale_factor
+        
+        if x.data.ndim == 4:  # 2D
+            H_out = int(x.shape[2] * scale_factors[0])
+            W_out = int(x.shape[3] * scale_factors[1])
+        elif x.data.ndim == 3:  # 1D
+            H_out = int(x.shape[2] * scale_factors[0])
+            W_out = None
+        else:
+            raise ValueError(f"Unsupported input dimension: {x.data.ndim}")
+    elif size is not None:
+        if isinstance(size, int):
+            if x.data.ndim == 4:
+                H_out = W_out = size
+            else:
+                H_out = size
+                W_out = None
+        else:
+            H_out, W_out = size if isinstance(size, tuple) else (size, size)
+    else:
+        raise ValueError("Either size or scale_factor must be provided")
+    
+    if mode == 'nearest':
+        if x.data.ndim == 4:
+            result = np.repeat(np.repeat(x.data, scale_factors[0], axis=2), scale_factors[1], axis=3)
+        else:
+            result = np.repeat(x.data, scale_factors[0], axis=2)
+    elif mode == 'bilinear':
+        # Simple bilinear interpolation
+        if x.data.ndim == 4:
+            N, C, H, W = x.shape
+            result = np.zeros((N, C, H_out, W_out))
+            for n in range(N):
+                for c in range(C):
+                    for h in range(H_out):
+                        for w in range(W_out):
+                            h_src = h / scale_factors[0]
+                            w_src = w / scale_factors[1]
+                            h0, w0 = int(h_src), int(w_src)
+                            h1, w1 = min(h0 + 1, H - 1), min(w0 + 1, W - 1)
+                            h_ratio = h_src - h0
+                            w_ratio = w_src - w0
+                            result[n, c, h, w] = (
+                                x.data[n, c, h0, w0] * (1 - h_ratio) * (1 - w_ratio) +
+                                x.data[n, c, h0, w1] * (1 - h_ratio) * w_ratio +
+                                x.data[n, c, h1, w0] * h_ratio * (1 - w_ratio) +
+                                x.data[n, c, h1, w1] * h_ratio * w_ratio
+                            )
+        else:
+            raise NotImplementedError("Bilinear upsampling for 1D not implemented")
+    else:
+        raise ValueError(f"Unknown upsampling mode: {mode}")
+    
+    return Tensor(result, requires_grad=x.requires_grad)
+
+
+def group_norm(x: Tensor, num_groups: int, weight: Optional[Tensor] = None,
+               bias: Optional[Tensor] = None, eps: float = 1e-5) -> Tensor:
+    """Group normalization functional"""
+    N, C, H, W = x.shape
+    assert C % num_groups == 0, "Number of channels must be divisible by num_groups"
+    
+    x_reshaped = x.data.reshape(N, num_groups, C // num_groups, H, W)
+    mean = x_reshaped.mean(axis=(2, 3, 4), keepdims=True)
+    var = x_reshaped.var(axis=(2, 3, 4), keepdims=True)
+    x_norm = (x_reshaped - mean) / np.sqrt(var + eps)
+    x_norm = x_norm.reshape(N, C, H, W)
+    
+    result = x_norm
+    if weight is not None:
+        result = result * weight.data.reshape(1, -1, 1, 1)
+    if bias is not None:
+        result = result + bias.data.reshape(1, -1, 1, 1)
+    
+    return Tensor(result, requires_grad=x.requires_grad)
+
+
+def instance_norm(x: Tensor, running_mean: Optional[Tensor] = None,
+                  running_var: Optional[Tensor] = None,
+                  weight: Optional[Tensor] = None, bias: Optional[Tensor] = None,
+                  momentum: float = 0.1, eps: float = 1e-5) -> Tensor:
+    """Instance normalization functional"""
+    mean = x.data.mean(axis=(2, 3), keepdims=True)
+    var = x.data.var(axis=(2, 3), keepdims=True)
+    x_norm = (x.data - mean) / np.sqrt(var + eps)
+    
+    result = x_norm
+    if weight is not None:
+        result = result * weight.data.reshape(1, -1, 1, 1)
+    if bias is not None:
+        result = result + bias.data.reshape(1, -1, 1, 1)
+    
+    return Tensor(result, requires_grad=x.requires_grad)
+
+
+def conv1d(x: Tensor, weight: Tensor, bias: Optional[Tensor] = None,
+           stride: int = 1, padding: int = 0) -> Tensor:
+    """1D convolution functional"""
+    if padding > 0:
+        x = np.pad(x.data, ((0, 0), (0, 0), (padding, padding)), mode='constant')
+    
+    N, C_in, L_in = x.shape
+    C_out, _, k = weight.shape
+    
+    L_out = (L_in - k) // stride + 1
+    
+    result = np.zeros((N, C_out, L_out))
+    
+    for i in range(L_out):
+        start = i * stride
+        end = start + k
+        patch = x.data[:, :, start:end]
+        for c_out in range(C_out):
+            result[:, c_out, i] = np.sum(patch * weight.data[c_out], axis=(1, 2))
+    
+    output = Tensor(result, requires_grad=x.requires_grad)
+    
+    if bias is not None:
+        output = output + bias.reshape(1, -1, 1)
+    
+    return output
+
+
+def conv3d(x: Tensor, weight: Tensor, bias: Optional[Tensor] = None,
+           stride: Union[int, Tuple[int, int, int]] = 1,
+           padding: Union[int, Tuple[int, int, int]] = 0) -> Tensor:
+    """3D convolution functional"""
+    if isinstance(stride, int):
+        stride = (stride, stride, stride)
+    if isinstance(padding, int):
+        padding = (padding, padding, padding)
+    
+    N, C_in, D_in, H_in, W_in = x.shape
+    C_out, _, kD, kH, kW = weight.shape
+    
+    D_out = (D_in + 2 * padding[0] - kD) // stride[0] + 1
+    H_out = (H_in + 2 * padding[1] - kH) // stride[1] + 1
+    W_out = (W_in + 2 * padding[2] - kW) // stride[2] + 1
+    
+    if padding != (0, 0, 0):
+        x_padded = np.pad(x.data,
+                         ((0, 0), (0, 0),
+                          (padding[0], padding[0]),
+                          (padding[1], padding[1]),
+                          (padding[2], padding[2])),
+                         mode='constant')
+    else:
+        x_padded = x.data
+    
+    result = np.zeros((N, C_out, D_out, H_out, W_out))
+    
+    for d in range(D_out):
+        for h in range(H_out):
+            for w in range(W_out):
+                d_start = d * stride[0]
+                h_start = h * stride[1]
+                w_start = w * stride[2]
+                
+                patch = x_padded[:, :,
+                                d_start:d_start + kD,
+                                h_start:h_start + kH,
+                                w_start:w_start + kW]
+                
+                for c_out in range(C_out):
+                    result[:, c_out, d, h, w] = np.sum(
+                        patch * weight.data[c_out], axis=(1, 2, 3, 4)
+                    )
+    
+    output = Tensor(result, requires_grad=x.requires_grad)
+    
+    if bias is not None:
+        output = output + bias.reshape(1, -1, 1, 1, 1)
+    
+    return output
+
+
+def relu(x: Tensor) -> Tensor:
+    """ReLU activation functional"""
+    return x.relu()
+
+
+def gelu(x: Tensor) -> Tensor:
+    """GELU activation functional"""
+    return Tensor(0.5 * x.data * (1 + np.tanh(np.sqrt(2 / np.pi) * (x.data + 0.044715 * x.data**3))),
+                  requires_grad=x.requires_grad)
+
+
+def softmax(x: Tensor, dim: int = -1) -> Tensor:
+    """Softmax activation functional"""
+    exp_x = np.exp(x.data - np.max(x.data, axis=dim, keepdims=True))
+    return Tensor(exp_x / np.sum(exp_x, axis=dim, keepdims=True),
+                  requires_grad=x.requires_grad)
+
+
+# Import nn module for ModuleList
+import texor.nn as nn
 
 # Improved layer implementations with better gradient flow
 # Enhanced numerical stability and memory management

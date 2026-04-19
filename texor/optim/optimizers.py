@@ -536,13 +536,652 @@ def get_optimizer(name: str) -> type:
     optimizers = {
         'sgd': SGD,
         'adam': Adam,
+        'adamw': AdamW,
         'rmsprop': RMSprop,
         'adagrad': Adagrad,
         'adadelta': Adadelta
     }
-    
+
     name = name.lower()
     if name not in optimizers:
         raise ValueError(f"Unknown optimizer: {name}")
-        
+
     return optimizers[name]
+
+
+# =============================================================================
+# Additional Optimizers
+# =============================================================================
+
+class NAdam(Optimizer):
+    """Nesterov-accelerated Adaptive Moment Estimation (NAdam) optimizer
+    
+    Combines Nesterov momentum with Adam's adaptive learning rates.
+    """
+
+    def __init__(self, params: List[Tensor], lr: float = 0.002,
+                 betas: Tuple[float, float] = (0.9, 0.999),
+                 eps: float = 1e-8, weight_decay: float = 0):
+        super().__init__(params, lr)
+        self.betas = betas
+        self.eps = eps
+        self.weight_decay = weight_decay
+        self.t = 0
+        
+        self.m = [np.zeros_like(p.data) for p in params]  # First moment
+        self.v = [np.zeros_like(p.data) for p in params]  # Second moment
+
+    def step(self) -> None:
+        self.t += 1
+        beta1, beta2 = self.betas
+        mu_t = beta1 * (1 - 0.5 * 0.96 ** self.t)
+        mu_t1 = beta1 * (1 - 0.5 * 0.96 ** (self.t + 1))
+        correction = (1 - beta1 ** self.t) * np.sqrt(1 - beta2 ** self.t) / (1 - beta1 ** self.t)
+        
+        for i, param in enumerate(self.params):
+            if param.grad is None:
+                continue
+
+            grad = param.grad.data.copy()
+            
+            if self.weight_decay != 0:
+                grad = grad + self.weight_decay * param.data
+
+            # Update biased first moment estimate
+            self.m[i] = beta1 * self.m[i] + (1 - beta1) * grad
+            
+            # Update biased second raw moment estimate
+            self.v[i] = beta2 * self.v[i] + (1 - beta2) * (grad ** 2)
+            
+            # Compute Nesterov-corrected gradient
+            m_hat = (1 - mu_t) * self.m[i] + mu_t1 * grad
+            m_hat = m_hat / (1 - beta1 ** self.t)
+            
+            # Compute bias-corrected second raw moment estimate
+            v_hat = self.v[i] / (1 - beta2 ** self.t)
+            
+            # Update parameters
+            param.data = param.data - self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
+
+    def state_dict(self) -> dict:
+        return {
+            **super().state_dict(),
+            'betas': self.betas,
+            'eps': self.eps,
+            'weight_decay': self.weight_decay,
+            't': self.t,
+            'm': [m.copy() for m in self.m],
+            'v': [v.copy() for v in self.v]
+        }
+
+    def load_state_dict(self, state_dict: dict) -> None:
+        super().load_state_dict(state_dict)
+        self.betas = state_dict['betas']
+        self.eps = state_dict['eps']
+        self.weight_decay = state_dict['weight_decay']
+        self.t = state_dict['t']
+        self.m = [m.copy() for m in state_dict['m']]
+        self.v = [v.copy() for v in state_dict['v']]
+
+
+class RAdam(Optimizer):
+    """Rectified Adam (RAdam) optimizer
+    
+    A variant of Adam that rectifies the adaptive learning rate based on
+    the variance of the gradients.
+    """
+
+    def __init__(self, params: List[Tensor], lr: float = 0.001,
+                 betas: Tuple[float, float] = (0.9, 0.999),
+                 eps: float = 1e-8, weight_decay: float = 0):
+        super().__init__(params, lr)
+        self.betas = betas
+        self.eps = eps
+        self.weight_decay = weight_decay
+        self.t = 0
+        
+        self.m = [np.zeros_like(p.data) for p in params]  # First moment
+        self.v = [np.zeros_like(p.data) for p in params]  # Second moment
+
+    def step(self) -> None:
+        self.t += 1
+        beta1, beta2 = self.betas
+        
+        # Compute the rectification term
+        rho_inf = 2 / (1 - beta2) - 1
+        rho_t = rho_inf - 2 * self.t * (beta2 ** self.t) / (1 - beta2 ** self.t)
+        
+        for i, param in enumerate(self.params):
+            if param.grad is None:
+                continue
+
+            grad = param.grad.data.copy()
+            
+            if self.weight_decay != 0:
+                grad = grad + self.weight_decay * param.data
+
+            # Update biased first moment estimate
+            self.m[i] = beta1 * self.m[i] + (1 - beta1) * grad
+            
+            # Update biased second raw moment estimate
+            self.v[i] = beta2 * self.v[i] + (1 - beta2) * (grad ** 2)
+            
+            # Bias correction
+            m_hat = self.m[i] / (1 - beta1 ** self.t)
+            v_hat = self.v[i] / (1 - beta2 ** self.t)
+            
+            # Compute rectified learning rate
+            if rho_t > 4:
+                r_t = np.sqrt((rho_t - 4) / (rho_inf - 4) * (rho_t - 2) / (rho_inf - 2) * rho_inf / rho_t)
+                denom = np.sqrt(v_hat) + self.eps
+                param.data = param.data - self.lr * r_t * m_hat / denom
+            else:
+                denom = np.sqrt(v_hat) + self.eps
+                param.data = param.data - self.lr * m_hat / denom
+
+    def state_dict(self) -> dict:
+        return {
+            **super().state_dict(),
+            'betas': self.betas,
+            'eps': self.eps,
+            'weight_decay': self.weight_decay,
+            't': self.t,
+            'm': [m.copy() for m in self.m],
+            'v': [v.copy() for v in self.v]
+        }
+
+    def load_state_dict(self, state_dict: dict) -> None:
+        super().load_state_dict(state_dict)
+        self.betas = state_dict['betas']
+        self.eps = state_dict['eps']
+        self.weight_decay = state_dict['weight_decay']
+        self.t = state_dict['t']
+        self.m = [m.copy() for m in state_dict['m']]
+        self.v = [v.copy() for v in state_dict['v']]
+
+
+class Adamax(Optimizer):
+    """Adamax optimizer (variant of Adam based on infinity norm)"""
+
+    def __init__(self, params: List[Tensor], lr: float = 0.002,
+                 betas: Tuple[float, float] = (0.9, 0.999),
+                 eps: float = 1e-8, weight_decay: float = 0):
+        super().__init__(params, lr)
+        self.betas = betas
+        self.eps = eps
+        self.weight_decay = weight_decay
+        self.t = 0
+        
+        self.m = [np.zeros_like(p.data) for p in params]  # First moment
+        self.u = [np.zeros_like(p.data) for p in params]  # Infinity norm
+
+    def step(self) -> None:
+        self.t += 1
+        beta1, beta2 = self.betas
+        
+        for i, param in enumerate(self.params):
+            if param.grad is None:
+                continue
+
+            grad = param.grad.data.copy()
+            
+            if self.weight_decay != 0:
+                grad = grad + self.weight_decay * param.data
+
+            # Update biased first moment estimate
+            self.m[i] = beta1 * self.m[i] + (1 - beta1) * grad
+            
+            # Update the exponentially weighted infinity norm
+            self.u[i] = np.maximum(beta2 * self.u[i], np.abs(grad))
+            
+            # Bias correction
+            m_hat = self.m[i] / (1 - beta1 ** self.t)
+            
+            # Update parameters
+            param.data = param.data - self.lr * m_hat / (self.u[i] + self.eps)
+
+    def state_dict(self) -> dict:
+        return {
+            **super().state_dict(),
+            'betas': self.betas,
+            'eps': self.eps,
+            'weight_decay': self.weight_decay,
+            't': self.t,
+            'm': [m.copy() for m in self.m],
+            'u': [u.copy() for u in self.u]
+        }
+
+    def load_state_dict(self, state_dict: dict) -> None:
+        super().load_state_dict(state_dict)
+        self.betas = state_dict['betas']
+        self.eps = state_dict['eps']
+        self.weight_decay = state_dict['weight_decay']
+        self.t = state_dict['t']
+        self.m = [m.copy() for m in state_dict['m']]
+        self.u = [u.copy() for u in state_dict['u']]
+
+
+class ASGD(Optimizer):
+    """Averaged Stochastic Gradient Descent (ASGD) optimizer"""
+
+    def __init__(self, params: List[Tensor], lr: float = 0.01,
+                 alpha: float = 0.99, weight_decay: float = 0):
+        super().__init__(params, lr)
+        self.alpha = alpha
+        self.weight_decay = weight_decay
+        self.t = 0
+        self.avg_params = [np.zeros_like(p.data) for p in params]
+
+    def step(self) -> None:
+        self.t += 1
+        
+        for i, param in enumerate(self.params):
+            if param.grad is None:
+                continue
+
+            grad = param.grad.data.copy()
+            
+            if self.weight_decay != 0:
+                grad = grad + self.weight_decay * param.data
+
+            # Standard SGD update
+            param.data = param.data - self.lr * grad
+            
+            # Update averaged parameters
+            if self.t == 1:
+                self.avg_params[i] = param.data.copy()
+            else:
+                self.avg_params[i] = self.alpha * self.avg_params[i] + (1 - self.alpha) * param.data
+
+    def state_dict(self) -> dict:
+        return {
+            **super().state_dict(),
+            'alpha': self.alpha,
+            'weight_decay': self.weight_decay,
+            't': self.t,
+            'avg_params': [a.copy() for a in self.avg_params]
+        }
+
+    def load_state_dict(self, state_dict: dict) -> None:
+        super().load_state_dict(state_dict)
+        self.alpha = state_dict['alpha']
+        self.weight_decay = state_dict['weight_decay']
+        self.t = state_dict['t']
+        self.avg_params = [a.copy() for a in state_dict['avg_params']]
+
+
+class LBFGS(Optimizer):
+    """Limited-memory BFGS (L-BFGS) optimizer
+    
+    Note: This is a simplified implementation for small datasets.
+    """
+
+    def __init__(self, params: List[Tensor], lr: float = 1.0,
+                 max_iter: int = 20, max_history: int = 10,
+                 line_search: bool = True):
+        super().__init__(params, lr)
+        self.max_iter = max_iter
+        self.max_history = max_history
+        self.line_search = line_search
+        
+        # History of gradient differences and parameter differences
+        self.s_history = [[] for _ in params]
+        self.y_history = [[] for _ in params]
+        self.prev_grads = [np.zeros_like(p.data) for p in params]
+        self.prev_params = [np.zeros_like(p.data) for p in params]
+
+    def step(self) -> None:
+        for i, param in enumerate(self.params):
+            if param.grad is None:
+                continue
+
+            grad = param.grad.data.copy()
+            
+            # Store initial values
+            if len(self.s_history[i]) == 0:
+                self.prev_grads[i] = grad.copy()
+                self.prev_params[i] = param.data.copy()
+                param.data = param.data - self.lr * grad
+                continue
+            
+            # Compute s and y (parameter and gradient differences)
+            s = param.data - self.s_history[i][-1] if self.s_history[i] else param.data - self.prev_params[i]
+            y = grad - self.prev_grads[i]
+            
+            # Update history
+            if len(self.s_history[i]) >= self.max_history:
+                self.s_history[i].pop(0)
+                self.y_history[i].pop(0)
+            
+            self.s_history[i].append(param.data.copy())
+            self.y_history[i].append(y.copy())
+            
+            # Two-loop recursion to compute update direction
+            q = grad.copy()
+            alphas = []
+            
+            for s_k, y_k in zip(reversed(self.s_history[i]), reversed(self.y_history[i])):
+                rho_k = 1.0 / (np.sum(s_k * y_k) + 1e-10)
+                alpha = rho_k * np.sum(s_k * q)
+                alphas.append(alpha)
+                q = q - alpha * y_k
+            
+            # Initial Hessian approximation
+            s_last = self.s_history[i][-1] if self.s_history[i] else s
+            y_last = self.y_history[i][-1] if self.y_history[i] else y
+            gamma = np.sum(s_last * y_last) / (np.sum(y_last * y_last) + 1e-10)
+            z = gamma * q
+            
+            for s_k, y_k, alpha in zip(self.s_history[i], self.y_history[i], reversed(alphas)):
+                rho_k = 1.0 / (np.sum(s_k * y_k) + 1e-10)
+                beta = rho_k * np.sum(y_k * z)
+                z = z + s_k * (alpha - beta)
+            
+            # Update parameters
+            param.data = param.data - z
+            
+            # Store current values
+            self.prev_grads[i] = grad.copy()
+            self.prev_params[i] = param.data.copy()
+
+    def state_dict(self) -> dict:
+        return {
+            **super().state_dict(),
+            'max_iter': self.max_iter,
+            'max_history': self.max_history,
+            'line_search': self.line_search,
+            's_history': [s.copy() for s in self.s_history],
+            'y_history': [y.copy() for y in self.y_history],
+            'prev_grads': [g.copy() for g in self.prev_grads],
+            'prev_params': [p.copy() for p in self.prev_params]
+        }
+
+    def load_state_dict(self, state_dict: dict) -> None:
+        super().load_state_dict(state_dict)
+        self.max_iter = state_dict['max_iter']
+        self.max_history = state_dict['max_history']
+        self.line_search = state_dict['line_search']
+        self.s_history = [s.copy() for s in state_dict['s_history']]
+        self.y_history = [y.copy() for y in state_dict['y_history']]
+        self.prev_grads = [g.copy() for g in state_dict['prev_grads']]
+        self.prev_params = [p.copy() for p in state_dict['prev_params']]
+
+
+# =============================================================================
+# Learning Rate Schedulers
+# =============================================================================
+
+class LRScheduler:
+    """Base class for learning rate schedulers"""
+
+    def __init__(self, optimizer: Optimizer, last_epoch: int = -1):
+        self.optimizer = optimizer
+        self.last_epoch = last_epoch
+        self.base_lrs = [optimizer.lr]
+
+    def step(self) -> None:
+        """Update learning rate"""
+        raise NotImplementedError
+
+    def get_lr(self) -> List[float]:
+        """Get current learning rates"""
+        raise NotImplementedError
+
+    def state_dict(self) -> dict:
+        return {
+            'last_epoch': self.last_epoch,
+            'base_lrs': self.base_lrs
+        }
+
+    def load_state_dict(self, state_dict: dict) -> None:
+        self.last_epoch = state_dict['last_epoch']
+        self.base_lrs = state_dict['base_lrs']
+
+
+class StepLR(LRScheduler):
+    """Decays the learning rate by gamma every step_size epochs"""
+
+    def __init__(self, optimizer: Optimizer, step_size: int, gamma: float = 0.1,
+                 last_epoch: int = -1):
+        self.step_size = step_size
+        self.gamma = gamma
+        super().__init__(optimizer, last_epoch)
+
+    def step(self) -> None:
+        self.last_epoch += 1
+        if self.last_epoch % self.step_size == 0:
+            for i, param_group in enumerate([self.optimizer.params]):
+                param_group.lr = self.base_lrs[i] * (self.gamma ** (self.last_epoch // self.step_size))
+
+    def get_lr(self) -> List[float]:
+        return [base_lr * (self.gamma ** (self.last_epoch // self.step_size)) for base_lr in self.base_lrs]
+
+
+class MultiStepLR(LRScheduler):
+    """Decays the learning rate by gamma at specified milestones"""
+
+    def __init__(self, optimizer: Optimizer, milestones: List[int], gamma: float = 0.1,
+                 last_epoch: int = -1):
+        self.milestones = sorted(milestones)
+        self.gamma = gamma
+        super().__init__(optimizer, last_epoch)
+
+    def step(self) -> None:
+        self.last_epoch += 1
+        if self.last_epoch in self.milestones:
+            for i in range(len(self.optimizer.params)):
+                self.optimizer.lr = self.base_lrs[i] * (self.gamma ** self.milestones.index(self.last_epoch))
+
+    def get_lr(self) -> List[float]:
+        count = sum(1 for m in self.milestones if m <= self.last_epoch)
+        return [base_lr * (self.gamma ** count) for base_lr in self.base_lrs]
+
+
+class ExponentialLR(LRScheduler):
+    """Decays the learning rate by gamma each epoch"""
+
+    def __init__(self, optimizer: Optimizer, gamma: float = 0.95,
+                 last_epoch: int = -1):
+        self.gamma = gamma
+        super().__init__(optimizer, last_epoch)
+
+    def step(self) -> None:
+        self.last_epoch += 1
+        for i in range(len(self.optimizer.params)):
+            self.optimizer.lr = self.base_lrs[i] * (self.gamma ** self.last_epoch)
+
+    def get_lr(self) -> List[float]:
+        return [base_lr * (self.gamma ** self.last_epoch) for base_lr in self.base_lrs]
+
+
+class CosineAnnealingLR(LRScheduler):
+    """Cosine annealing learning rate schedule"""
+
+    def __init__(self, optimizer: Optimizer, T_max: int, eta_min: float = 0,
+                 last_epoch: int = -1):
+        self.T_max = T_max
+        self.eta_min = eta_min
+        super().__init__(optimizer, last_epoch)
+
+    def step(self) -> None:
+        self.last_epoch += 1
+        for i in range(len(self.optimizer.params)):
+            self.optimizer.lr = self.eta_min + (self.base_lrs[i] - self.eta_min) * \
+                (1 + np.cos(np.pi * self.last_epoch / self.T_max)) / 2
+
+    def get_lr(self) -> List[float]:
+        return [self.eta_min + (base_lr - self.eta_min) *
+                (1 + np.cos(np.pi * self.last_epoch / self.T_max)) / 2
+                for base_lr in self.base_lrs]
+
+
+class ReduceLROnPlateau(LRScheduler):
+    """Reduce learning rate when a metric has stopped improving"""
+
+    def __init__(self, optimizer: Optimizer, mode: str = 'min', factor: float = 0.1,
+                 patience: int = 10, threshold: float = 1e-4, min_lr: float = 0,
+                 last_epoch: int = -1):
+        self.mode = mode
+        self.factor = factor
+        self.patience = patience
+        self.threshold = threshold
+        self.min_lr = min_lr
+        self.best = float('inf') if mode == 'min' else float('-inf')
+        self.num_bad_epochs = 0
+        super().__init__(optimizer, last_epoch)
+
+    def step(self, metrics: Optional[float] = None) -> None:
+        if metrics is None:
+            return
+            
+        self.last_epoch += 1
+        
+        if self.mode == 'min':
+            is_better = metrics < (self.best - self.threshold)
+        else:
+            is_better = metrics > (self.best + self.threshold)
+        
+        if is_better:
+            self.best = metrics
+            self.num_bad_epochs = 0
+        else:
+            self.num_bad_epochs += 1
+        
+        if self.num_bad_epochs >= self.patience:
+            for i in range(len(self.optimizer.params)):
+                new_lr = max(self.base_lrs[i] * self.factor, self.min_lr)
+                self.optimizer.lr = new_lr
+                self.base_lrs[i] = new_lr
+            self.num_bad_epochs = 0
+
+    def get_lr(self) -> List[float]:
+        return [self.optimizer.lr]
+
+
+class WarmupScheduler(LRScheduler):
+    """Learning rate warmup scheduler"""
+
+    def __init__(self, optimizer: Optimizer, warmup_epochs: int,
+                 base_scheduler: Optional[LRScheduler] = None,
+                 last_epoch: int = -1):
+        self.warmup_epochs = warmup_epochs
+        self.base_scheduler = base_scheduler
+        super().__init__(optimizer, last_epoch)
+
+    def step(self) -> None:
+        self.last_epoch += 1
+        
+        if self.last_epoch < self.warmup_epochs:
+            # Linear warmup
+            warmup_factor = self.last_epoch / self.warmup_epochs
+            for i in range(len(self.optimizer.params)):
+                self.optimizer.lr = self.base_lrs[i] * warmup_factor
+        elif self.base_scheduler is not None:
+            self.base_scheduler.last_epoch = self.last_epoch - self.warmup_epochs
+            self.base_scheduler.step()
+            for i in range(len(self.optimizer.params)):
+                self.optimizer.lr = self.base_scheduler.optimizer.lr
+
+    def get_lr(self) -> List[float]:
+        if self.last_epoch < self.warmup_epochs:
+            return [base_lr * self.last_epoch / self.warmup_epochs for base_lr in self.base_lrs]
+        elif self.base_scheduler is not None:
+            return self.base_scheduler.get_lr()
+        return self.base_lrs
+
+
+class CyclicLR(LRScheduler):
+    """Cyclical learning rate schedule"""
+
+    def __init__(self, optimizer: Optimizer, base_lr: float, max_lr: float,
+                 step_size: int = 2000, mode: str = 'triangular',
+                 gamma: float = 1.0, last_epoch: int = -1):
+        self.base_lr = base_lr
+        self.max_lr = max_lr
+        self.step_size = step_size
+        self.mode = mode
+        self.gamma = gamma
+        super().__init__(optimizer, last_epoch)
+
+    def step(self) -> None:
+        self.last_epoch += 1
+        
+        cycle = np.floor(1 + self.last_epoch / (2 * self.step_size))
+        x = np.abs(self.last_epoch / self.step_size - 2 * cycle + 1)
+        
+        if self.mode == 'triangular':
+            scale_factor = 1.0
+        elif self.mode == 'triangular2':
+            scale_factor = 1 / (2 ** (cycle - 1))
+        elif self.mode == 'exp_range':
+            scale_factor = self.gamma ** self.last_epoch
+        else:
+            scale_factor = 1.0
+        
+        delta = self.max_lr - self.base_lr
+        self.optimizer.lr = self.base_lr + delta * scale_factor * np.maximum(0, 1 - x)
+
+    def get_lr(self) -> List[float]:
+        return [self.optimizer.lr]
+
+
+class OneCycleLR(LRScheduler):
+    """One cycle learning rate schedule
+    
+    A schedule that starts with a warmup, then decreases the learning rate.
+    """
+
+    def __init__(self, optimizer: Optimizer, max_lr: float,
+                 total_steps: Optional[int] = None,
+                 pct_start: float = 0.3, div_factor: float = 25.0,
+                 final_div_factor: float = 10000.0, last_epoch: int = -1):
+        self.max_lr = max_lr
+        self.total_steps = total_steps
+        self.pct_start = pct_start
+        self.div_factor = div_factor
+        self.final_div_factor = final_div_factor
+        super().__init__(optimizer, last_epoch)
+
+    def step(self) -> None:
+        self.last_epoch += 1
+        
+        if self.total_steps is None:
+            raise ValueError("total_steps must be specified")
+        
+        step = self.last_epoch
+        pct = step / self.total_steps
+        
+        if pct < self.pct_start:
+            # Warmup phase
+            lr_factor = pct / self.pct_start
+        else:
+            # Decay phase
+            lr_factor = 1 - (pct - self.pct_start) / (1 - self.pct_start)
+        
+        min_lr = self.max_lr / self.div_factor
+        final_lr = self.max_lr / self.final_div_factor
+        
+        self.optimizer.lr = min_lr + (self.max_lr - min_lr) * lr_factor
+
+    def get_lr(self) -> List[float]:
+        return [self.optimizer.lr]
+
+
+def get_scheduler(name: str, optimizer: Optimizer, **kwargs) -> LRScheduler:
+    """Get learning rate scheduler by name"""
+    schedulers = {
+        'step': StepLR,
+        'multistep': MultiStepLR,
+        'exponential': ExponentialLR,
+        'cosine': CosineAnnealingLR,
+        'plateau': ReduceLROnPlateau,
+        'warmup': WarmupScheduler,
+        'cyclic': CyclicLR,
+        'onecycle': OneCycleLR
+    }
+
+    name = name.lower()
+    if name not in schedulers:
+        raise ValueError(f"Unknown scheduler: {name}")
+
+    return schedulers[name](optimizer, **kwargs)

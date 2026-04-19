@@ -6,20 +6,20 @@ Provides tensor operations, automatic differentiation, neural networks, and opti
 without heavy dependencies.
 
 Example:
-    >>> import texor
-    >>> from texor.core import randn
-    >>> from texor.nn import Sequential, Linear, ReLU
-    >>> 
-    >>> # Create model
-    >>> model = Sequential([
-    ...     Linear(784, 128),
-    ...     ReLU(),
-    ...     Linear(128, 10)
-    ... ])
-    >>> 
-    >>> # Forward pass
-    >>> x = randn((32, 784))
-    >>> output = model(x)
+>>> import texor
+>>> from texor.core import randn
+>>> from texor.nn import Sequential, Linear, ReLU
+>>>
+>>> # Create model
+>>> model = Sequential([
+...     Linear(784, 128),
+...     ReLU(),
+...     Linear(128, 10)
+... ])
+>>>
+>>> # Forward pass
+>>> x = randn((32, 784))
+>>> output = model(x)
 """
 
 # Import core functionality
@@ -37,18 +37,141 @@ from .core import (
     device_count
 )
 
-# Import neural network components (commonly used)
+# Import neural network components
 from .nn import (
-    Sequential,
+    # Layers
+    Layer,
     Linear,
+    Conv2D,
+    Conv1D,
+    Conv3D,
+    ConvTranspose2d,
+    MaxPool2D,
+    MaxPool3D,
+    AvgPool3D,
+    BatchNorm2D,
+    LayerNorm,
+    GroupNorm,
+    InstanceNorm1d,
+    InstanceNorm2d,
+    Dropout,
+    Dropout2D,
+    Dropout3D,
+    AdaptiveAvgPool2d,
+    Embedding,
+    Flatten,
+    Reshape,
+    Sequential,
+    MultiheadAttention,
+    TransformerEncoderLayer,
+    TransformerDecoderLayer,
+    TransformerEncoder,
+    TransformerDecoder,
+    Transformer,
+    
+    # Activations
     ReLU,
     Sigmoid,
+    Tanh,
+    LeakyReLU,
+    ELU,
+    Softmax,
+    GELU,
+    
+    # Loss functions
     MSELoss,
-    CrossEntropyLoss
+    CrossEntropyLoss,
+    BCELoss,
+    L1Loss,
+    HuberLoss,
+    SmoothL1Loss,
+    KLDivLoss,
+    
+    # Functional
+    F,
 )
 
-# Import optimizers (commonly used)
-from .optim import Adam, SGD
+# Import optimizers
+from .optim import (
+    Optimizer,
+    SGD,
+    Adam,
+    AdamW,
+    RMSprop,
+    Adagrad,
+    Adadelta,
+    NAdam,
+    RAdam,
+    Adamax,
+    ASGD,
+    LBFGS,
+    get_optimizer,
+    
+    # Schedulers
+    LRScheduler,
+    StepLR,
+    MultiStepLR,
+    ExponentialLR,
+    CosineAnnealingLR,
+    ReduceLROnPlateau,
+    WarmupScheduler,
+    CyclicLR,
+    OneCycleLR,
+)
+
+# Import data utilities
+from .data import (
+    Dataset,
+    TensorDataset,
+    ArrayDataset,
+    DataLoader,
+    SubsetDataset,
+    MappedDataset,
+    random_split,
+    Transform,
+    Compose,
+    ToTensor,
+    ToPILImage,
+    ToNumpy,
+    ToDtype,
+    Normalize,
+    RandomHorizontalFlip,
+    RandomVerticalFlip,
+    RandomRotation,
+    RandomCrop,
+    CenterCrop,
+    Resize,
+    RandomAffine,
+    RandomPerspective,
+    ColorJitter,
+    RandomErasing,
+    RandomChoice,
+    RandomApply,
+    Lambda,
+)
+
+# Import metrics
+from .metrics import (
+    Metric,
+    Accuracy,
+    Precision,
+    Recall,
+    F1Score,
+    MSE,
+    MAE,
+    RMSE,
+    R2Score,
+    ConfusionMatrix,
+    AUC,
+    IoU,
+    DiceCoefficient,
+    Perplexity,
+    MetricCollection,
+    get_metric,
+)
+
+# Import utils
+from . import utils
 
 # Version
 from .version import __version__
@@ -65,36 +188,153 @@ __all__ = [
     'Tensor', 'zeros', 'ones', 'randn', 'tensor', 'eye', 'arange',
     'set_device', 'get_device', 'cuda_is_available', 'device_count',
     
-    # Neural Networks (commonly used)
-    'Sequential', 'Linear', 'ReLU', 'Sigmoid',
-    'MSELoss', 'CrossEntropyLoss',
+    # Neural Networks
+    'Layer',
+    'Linear',
+    'Conv2D',
+    'Conv1D',
+    'Conv3D',
+    'ConvTranspose2d',
+    'MaxPool2D',
+    'MaxPool3D',
+    'AvgPool3D',
+    'BatchNorm2D',
+    'LayerNorm',
+    'GroupNorm',
+    'InstanceNorm1d',
+    'InstanceNorm2d',
+    'Dropout',
+    'Dropout2D',
+    'Dropout3D',
+    'AdaptiveAvgPool2d',
+    'Embedding',
+    'Flatten',
+    'Reshape',
+    'Sequential',
+    'MultiheadAttention',
+    'TransformerEncoderLayer',
+    'TransformerDecoderLayer',
+    'TransformerEncoder',
+    'TransformerDecoder',
+    'Transformer',
+    'ReLU',
+    'Sigmoid',
+    'Tanh',
+    'LeakyReLU',
+    'ELU',
+    'Softmax',
+    'GELU',
+    'MSELoss',
+    'CrossEntropyLoss',
+    'BCELoss',
+    'L1Loss',
+    'HuberLoss',
+    'SmoothL1Loss',
+    'KLDivLoss',
+    'F',
     
-    # Optimizers (commonly used)
-    'Adam', 'SGD',
+    # Optimizers
+    'Optimizer',
+    'SGD',
+    'Adam',
+    'AdamW',
+    'RMSprop',
+    'Adagrad',
+    'Adadelta',
+    'NAdam',
+    'RAdam',
+    'Adamax',
+    'ASGD',
+    'LBFGS',
+    'get_optimizer',
+    'LRScheduler',
+    'StepLR',
+    'MultiStepLR',
+    'ExponentialLR',
+    'CosineAnnealingLR',
+    'ReduceLROnPlateau',
+    'WarmupScheduler',
+    'CyclicLR',
+    'OneCycleLR',
+    
+    # Data
+    'Dataset',
+    'TensorDataset',
+    'ArrayDataset',
+    'DataLoader',
+    'SubsetDataset',
+    'MappedDataset',
+    'random_split',
+    'Transform',
+    'Compose',
+    'ToTensor',
+    'ToPILImage',
+    'ToNumpy',
+    'ToDtype',
+    'Normalize',
+    'RandomHorizontalFlip',
+    'RandomVerticalFlip',
+    'RandomRotation',
+    'RandomCrop',
+    'CenterCrop',
+    'Resize',
+    'RandomAffine',
+    'RandomPerspective',
+    'ColorJitter',
+    'RandomErasing',
+    'RandomChoice',
+    'RandomApply',
+    'Lambda',
+    
+    # Metrics
+    'Metric',
+    'Accuracy',
+    'Precision',
+    'Recall',
+    'F1Score',
+    'MSE',
+    'MAE',
+    'RMSE',
+    'R2Score',
+    'ConfusionMatrix',
+    'AUC',
+    'IoU',
+    'DiceCoefficient',
+    'Perplexity',
+    'MetricCollection',
+    'get_metric',
+    
+    # Utils
+    'utils',
     
     # Version
-    '__version__'
+    '__version__',
 ]
 
 # Framework information
 def info():
     """Print Texor framework information"""
-    from rich.console import Console
-    from rich.panel import Panel
-    import platform
-    
-    console = Console()
-    console.print(Panel(
-        f"[bold blue]Texor v{__version__}[/bold blue] - Native Deep Learning Framework\n" +
-        "[dim]Lightweight ML library with PyTorch-style API[/dim]\n\n" +
-        f"[yellow]Python:[/yellow] {platform.python_version()}\n" +
-        f"[yellow]Platform:[/yellow] {platform.platform()}\n" +
-        f"[yellow]Device:[/yellow] {get_device()}\n" +
-        f"[yellow]GPU Available:[/yellow] {cuda_is_available()}",
-        title="Framework Info",
-        style="green"
-    ))
+    try:
+        from rich.console import Console
+        from rich.panel import Panel
+        import platform
+        
+        console = Console()
+        console.print(Panel(
+            f"[bold blue]Texor v{__version__}[/bold blue] - Native Deep Learning Framework\n" +
+            "[dim]Lightweight ML library with PyTorch-style API[/dim]\n\n" +
+            f"[yellow]Python:[/yellow] {platform.python_version()}\n" +
+            f"[yellow]Platform:[/yellow] {platform.platform()}\n" +
+            f"[yellow]Device:[/yellow] {get_device()}\n" +
+            f"[yellow]GPU Available:[/yellow] {cuda_is_available()}",
+            title="Framework Info",
+            style="green"
+        ))
+    except ImportError:
+        print(f"Texor v{__version__} - Native Deep Learning Framework")
+        print(f"Device: {get_device()}")
+        print(f"GPU Available: {cuda_is_available()}")
 
 # Configure warnings
 import warnings
-warnings.filterwarnings('ignore', category=UserWarning, module='numba')
+warnings.filterwarnings('default', category=DeprecationWarning)
