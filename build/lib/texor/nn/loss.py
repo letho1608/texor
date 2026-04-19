@@ -124,7 +124,7 @@ class CrossEntropyLoss(Loss):
             losses = np.where(mask, 0, losses)
         
         # Create tensor and apply reduction
-        loss_tensor = Tensor(losses)
+        loss_tensor = Tensor(losses, requires_grad=predictions.requires_grad)
         return self._apply_reduction(loss_tensor)
 
 class BCELoss(Loss):
@@ -151,7 +151,7 @@ class BCELoss(Loss):
             losses = losses * self.weight
         
         # Create tensor and apply reduction    
-        loss_tensor = Tensor(losses)
+        loss_tensor = Tensor(losses, requires_grad=predictions.requires_grad)
         return self._apply_reduction(loss_tensor)
 
 class L1Loss(Loss):

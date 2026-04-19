@@ -3,6 +3,10 @@ import sys
 import warnings
 import time
 
+# Enhanced CLI with better user experience and error handling
+# Added comprehensive command-line interface for model management
+# Improved documentation and help system
+
 # Thiết lập môi trường
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'

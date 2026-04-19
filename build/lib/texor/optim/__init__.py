@@ -1,32 +1,64 @@
+"""Optimization module for Texor
+
+This module provides various optimizers and learning rate schedulers
+for training neural networks.
+"""
+
 from .optimizers import (
+    # Optimizers
+    Optimizer,
     SGD,
     Adam,
+    AdamW,
     RMSprop,
     Adagrad,
-    Adadelta
+    Adadelta,
+    NAdam,
+    RAdam,
+    Adamax,
+    ASGD,
+    LBFGS,
+    get_optimizer,
+    
+    # Learning Rate Schedulers
+    LRScheduler,
+    StepLR,
+    MultiStepLR,
+    ExponentialLR,
+    CosineAnnealingLR,
+    ReduceLROnPlateau,
+    WarmupScheduler,
+    CyclicLR,
+    OneCycleLR,
+    get_scheduler,
 )
 
-def get_optimizer(name: str, **kwargs):
-    """Get optimizer by name"""
-    name = name.lower()
-    if name == 'sgd':
-        return SGD(**kwargs)
-    elif name == 'adam':
-        return Adam(**kwargs)
-    elif name == 'rmsprop':
-        return RMSprop(**kwargs)
-    elif name == 'adagrad':
-        return Adagrad(**kwargs)
-    elif name == 'adadelta':
-        return Adadelta(**kwargs)
-    else:
-        raise ValueError(f"Unknown optimizer: {name}")
 
 __all__ = [
+    # Optimizers
+    'Optimizer',
     'SGD',
     'Adam',
+    'AdamW',
     'RMSprop',
     'Adagrad',
     'Adadelta',
-    'get_optimizer'
+    'NAdam',
+    'RAdam',
+    'Adamax',
+    'ASGD',
+    'LBFGS',
+    'get_optimizer',
+    
+    # Learning Rate Schedulers
+    'LRScheduler',
+    'StepLR',
+    'MultiStepLR',
+    'ExponentialLR',
+    'CosineAnnealingLR',
+    'ReduceLROnPlateau',
+    'WarmupScheduler',
+    'CyclicLR',
+    'OneCycleLR',
+    'get_scheduler',
 ]

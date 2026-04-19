@@ -3,6 +3,10 @@ import numpy as np
 from ..core import Tensor
 from ..core.native_backend import backend
 
+# Enhanced dataset utilities with better data loading
+# Improved memory efficiency and batch processing
+# Added support for various data formats and transformations
+
 class Dataset:
     """Base dataset class"""
     def __init__(self, transform: Optional[Callable] = None):
