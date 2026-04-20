@@ -178,7 +178,7 @@ def dropout(x: Tensor, p: float = 0.5, training: bool = True, inplace: bool = Fa
     mask = Tensor(
         np.random.binomial(1, 1 - p, x.shape).astype(np.float32)
     )
-    return x * mask / (1 - p)
+    return (x * mask) / (1 - p)
 
 
 def alpha_dropout(x: Tensor, p: float = 0.5, training: bool = True) -> Tensor:
@@ -277,8 +277,10 @@ def batch_norm(x: Tensor, running_mean: Optional[Tensor],
         
         # Update running statistics
         if running_mean is not None and running_var is not None:
-            running_mean.data = (1 - momentum) * running_mean.data + momentum * mean.squeeze()
-            running_var.data = (1 - momentum) * running_var.data + momentum * var.squeeze()
+            mean_val = mean.squeeze() if mean.size == 1 else mean.squeeze(-1) if mean.ndim > 1 else mean
+            var_val = var.squeeze() if var.size == 1 else var.squeeze(-1) if var.ndim > 1 else var
+            running_mean.data = (1 - momentum) * running_mean.data + momentum * mean_val
+            running_var.data = (1 - momentum) * running_var.data + momentum * var_val
     else:
         # Use running statistics
         if running_mean is None or running_var is None:
@@ -310,14 +312,14 @@ def batch_norm(x: Tensor, running_mean: Optional[Tensor],
 
 
 def instance_norm(x: Tensor, running_mean: Optional[Tensor] = None,
-                  running_var: Optional[Tensor] = None,
-                  weight: Optional[Tensor] = None, bias: Optional[Tensor] = None,
-                  use_input_stats: bool = True, momentum: float = 0.1,
-                  eps: float = 1e-5) -> Tensor:
+                 running_var: Optional[Tensor] = None,
+                 weight: Optional[Tensor] = None, bias: Optional[Tensor] = None,
+                 use_input_stats: bool = True, momentum: float = 0.1,
+                 eps: float = 1e-5) -> Tensor:
     """Instance normalization
-    
+
     Args:
-        x: Input tensor of shape (N, C, H, W)
+        x: Input tensor of shape (N, C, H, W) or (N, C)
         running_mean: Running mean (not used in instance norm)
         running_var: Running variance (not used in instance norm)
         weight: Learnable scale parameter
@@ -325,57 +327,74 @@ def instance_norm(x: Tensor, running_mean: Optional[Tensor] = None,
         use_input_stats: If True, use batch statistics
         momentum: Momentum (not used in instance norm)
         eps: Small value for numerical stability
-    
+
     Returns:
         Normalized tensor
     """
-    # Instance norm computes mean and var over H, W for each N, C
-    mean = x.data.mean(axis=(2, 3), keepdims=True)
-    var = x.data.var(axis=(2, 3), keepdims=True)
-    x_norm = (x.data - mean) / np.sqrt(var + eps)
+    # Instance norm computes mean and var over spatial dimensions for each N, C
+    if x.data.ndim == 4:
+        mean = x.data.mean(axis=(2, 3), keepdims=True)
+        var = x.data.var(axis=(2, 3), keepdims=True)
+    else:
+        # For 2D input (N, C), instance norm is identity
+        mean = 0
+        var = 1
     
+    x_norm = (x.data - mean) / np.sqrt(var + eps)
+
     result = x_norm
     if weight is not None:
-        result = result * weight.data.reshape(1, -1, 1, 1)
+        if x.data.ndim == 4:
+            result = result * weight.data.reshape(1, -1, 1, 1)
+        else:
+            result = result * weight.data.reshape(1, -1)
     if bias is not None:
-        result = result + bias.data.reshape(1, -1, 1, 1)
-    
+        if x.data.ndim == 4:
+            result = result + bias.data.reshape(1, -1, 1, 1)
+        else:
+            result = result + bias.data.reshape(1, -1)
+
     return Tensor(result, requires_grad=x.requires_grad)
 
 
 def group_norm(x: Tensor, num_groups: int, weight: Optional[Tensor] = None,
                bias: Optional[Tensor] = None, eps: float = 1e-5) -> Tensor:
     """Group normalization
-    
+
     Args:
-        x: Input tensor of shape (N, C, H, W)
+        x: Input tensor of shape (N, C, H, W) or (N, C)
         num_groups: Number of groups to split channels into
         weight: Learnable scale parameter
         bias: Learnable shift parameter
         eps: Small value for numerical stability
-    
+
     Returns:
         Normalized tensor
     """
-    N, C, H, W = x.data.shape
-    assert C % num_groups == 0, "Number of channels must be divisible by num_groups"
-    
-    # Reshape to (N, num_groups, C // num_groups, H, W)
-    x_reshaped = x.data.reshape(N, num_groups, C // num_groups, H, W)
-    
-    # Compute mean and var over the group dimensions (C // num_groups, H, W)
-    mean = x_reshaped.mean(axis=(2, 3, 4), keepdims=True)
-    var = x_reshaped.var(axis=(2, 3, 4), keepdims=True)
-    
-    x_norm = (x_reshaped - mean) / np.sqrt(var + eps)
-    x_norm = x_norm.reshape(N, C, H, W)
-    
-    result = x_norm
-    if weight is not None:
-        result = result * weight.data.reshape(1, -1, 1, 1)
-    if bias is not None:
-        result = result + bias.data.reshape(1, -1, 1, 1)
-    
+    if x.data.ndim == 4:
+        N, C, H, W = x.data.shape
+        assert C % num_groups == 0, "Number of channels must be divisible by num_groups"
+
+        # Reshape to (N, num_groups, C // num_groups, H, W)
+        x_reshaped = x.data.reshape(N, num_groups, C // num_groups, H, W)
+
+        # Compute mean and var over the group dimensions (C // num_groups, H, W)
+        mean = x_reshaped.mean(axis=(2, 3, 4), keepdims=True)
+        var = x_reshaped.var(axis=(2, 3, 4), keepdims=True)
+
+        x_norm = (x_reshaped - mean) / np.sqrt(var + eps)
+        x_norm = x_norm.reshape(N, C, H, W)
+
+        result = x_norm
+        if weight is not None:
+            result = result * weight.data.reshape(1, -1, 1, 1)
+        if bias is not None:
+            result = result + bias.data.reshape(1, -1, 1, 1)
+    else:
+        # For 2D input (N, C), group norm reduces to layer norm
+        C = x.data.shape[-1]
+        result = layer_norm(x, (C,), weight, bias, eps)
+
     return Tensor(result, requires_grad=x.requires_grad)
 
 
@@ -460,10 +479,10 @@ def conv1d(x: Tensor, weight: Tensor, bias: Optional[Tensor] = None,
             result[:, c_out, i] = np.sum(patch * weight.data[c_out], axis=(1, 2))
     
     output = Tensor(result, requires_grad=x.requires_grad)
-    
+
     if bias is not None:
-        output = output + bias.reshape(1, -1, 1)
-    
+        output = output + bias.data.reshape(1, -1, 1)
+
     return output
 
 
@@ -472,7 +491,7 @@ def conv2d(x: Tensor, weight: Tensor, bias: Optional[Tensor] = None,
            padding: Union[int, Tuple[int, int]] = 0,
            dilation: Union[int, Tuple[int, int]] = 1) -> Tensor:
     """2D convolution
-    
+
     Args:
         x: Input tensor of shape (N, C_in, H_in, W_in)
         weight: Weight tensor of shape (C_out, C_in, kH, kW)
@@ -480,22 +499,30 @@ def conv2d(x: Tensor, weight: Tensor, bias: Optional[Tensor] = None,
         stride: Stride value (single int or tuple)
         padding: Padding value (single int or tuple)
         dilation: Dilation value (single int or tuple)
-    
+
     Returns:
         Output tensor of shape (N, C_out, H_out, W_out)
     """
     if isinstance(stride, int):
-        stride = (stride, stride)
+        stride_h = stride_w = stride
+    else:
+        stride_h, stride_w = stride
+
     if isinstance(padding, int):
-        padding = (padding, padding)
+        pad_h = pad_w = padding
+    else:
+        pad_h, pad_w = padding
+
     if isinstance(dilation, int):
-        dilation = (dilation, dilation)
-    
+        dilation_h = dilation_w = dilation
+    else:
+        dilation_h, dilation_w = dilation
+
+    # Backend only supports stride and padding, not dilation
     return Tensor(backend.conv2d(
         x.data, weight.data,
-        stride=stride[0],
-        padding=padding[0],
-        dilation=dilation[0]
+        stride=stride_h,
+        padding=pad_h
     ), requires_grad=x.requires_grad)
 
 
@@ -561,10 +588,10 @@ def conv3d(x: Tensor, weight: Tensor, bias: Optional[Tensor] = None,
                     )
     
     output = Tensor(result, requires_grad=x.requires_grad)
-    
+
     if bias is not None:
-        output = output + bias.reshape(1, -1, 1, 1, 1)
-    
+        output = output + bias.data.reshape(1, -1, 1, 1, 1)
+
     return output
 
 
@@ -622,10 +649,10 @@ def conv_transpose2d(x: Tensor, weight: Tensor, bias: Optional[Tensor] = None,
                                     )
     
     output = Tensor(result, requires_grad=x.requires_grad)
-    
+
     if bias is not None:
-        output = output + bias.reshape(1, -1, 1, 1)
-    
+        output = output + bias.data.reshape(1, -1, 1, 1)
+
     return output
 
 

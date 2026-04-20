@@ -1,5 +1,6 @@
 from typing import Sequence, Callable, Union, Tuple, Optional
 import numpy as np
+from scipy.ndimage import rotate, zoom, affine_transform
 from ..core import Tensor
 
 class Transform:
@@ -93,7 +94,6 @@ class RandomRotation(Transform):
     def __call__(self, tensor: Tensor) -> Tensor:
         angle = np.random.uniform(self.min_angle, self.max_angle)
         if isinstance(tensor, np.ndarray):
-            from scipy.ndimage import rotate
             return rotate(tensor, angle, reshape=False)
         return Tensor(rotate(tensor.numpy(), angle, reshape=False))
         
@@ -113,13 +113,17 @@ class RandomCrop(Transform):
             data = tensor
         else:
             data = tensor.numpy()
-            
+
         h, w = data.shape[-2:]
         new_h, new_w = self.size
-        
-        top = np.random.randint(0, h - new_h + 1)
-        left = np.random.randint(0, w - new_w + 1)
-        
+
+        # Ensure crop size doesn't exceed image size
+        new_h = min(new_h, h)
+        new_w = min(new_w, w)
+
+        top = np.random.randint(0, h - new_h + 1) if h > new_h else 0
+        left = np.random.randint(0, w - new_w + 1) if w > new_w else 0
+
         cropped = data[..., top:top+new_h, left:left+new_w]
         return Tensor(cropped) if isinstance(tensor, Tensor) else cropped
         
@@ -139,11 +143,10 @@ class Resize(Transform):
             data = tensor
         else:
             data = tensor.numpy()
-            
-        from scipy.ndimage import zoom
+
         h, w = data.shape[-2:]
         scale_h, scale_w = self.size[0] / h, self.size[1] / w
-        
+
         resized = zoom(data, (1,) * (data.ndim - 2) + (scale_h, scale_w))
         return Tensor(resized) if isinstance(tensor, Tensor) else resized
         
@@ -183,9 +186,6 @@ class RandomAffine(Transform):
         scale_factor = 1.0
         if self.scale is not None:
             scale_factor = np.random.uniform(self.scale[0], self.scale[1])
-        
-        # Apply transformation using scipy.ndimage
-        from scipy.ndimage import affine_transform, rotate
         
         # Simple rotation (no full affine for simplicity)
         result = rotate(data, angle, reshape=False, mode='constant', cval=0)
@@ -272,32 +272,32 @@ class RandomErasing(Transform):
     def __call__(self, tensor: Tensor) -> Tensor:
         if np.random.random() > self.p:
             return tensor
-        
+
         if isinstance(tensor, np.ndarray):
             data = tensor.copy()
         else:
             data = tensor.numpy().copy()
-        
-        c, h, w = data.shape[-3], data.shape[-2], data.shape[-1]
+
+        h, w = data.shape[-2:]
         area = h * w
-        
-        for _ in range(10):  # Try up to 10 times
+
+        for _ in range(10): # Try up to 10 times
             target_area = np.random.uniform(self.scale[0], self.scale[1]) * area
             aspect_ratio = np.random.uniform(self.ratio[0], self.ratio[1])
-            
+
             erase_h = int(np.sqrt(target_area * aspect_ratio))
             erase_w = int(np.sqrt(target_area / aspect_ratio))
-            
+
             if erase_h < h and erase_w < w:
                 i = np.random.randint(0, h - erase_h)
                 j = np.random.randint(0, w - erase_w)
-                
-                if data.ndim == 3:
+
+                if data.ndim >= 3:
                     data[..., i:i+erase_h, j:j+erase_w] = self.value
-                elif data.ndim == 2:
+                else:
                     data[i:i+erase_h, j:j+erase_w] = self.value
                 break
-        
+
         return Tensor(data) if isinstance(tensor, Tensor) else data
 
     def __repr__(self) -> str:
