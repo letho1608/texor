@@ -10,8 +10,13 @@ class BatchNorm2D(Layer):
         self.num_features = num_features
         self.eps = eps
         self.momentum = momentum
-        self.weight = Tensor(np.ones(num_features), requires_grad=True)
-        self.bias = Tensor(np.zeros(num_features), requires_grad=True)
+        
+        from .. import init
+        self.weight = Tensor(np.empty(num_features), requires_grad=True)
+        init.ones(self.weight)
+        self.bias = Tensor(np.empty(num_features), requires_grad=True)
+        init.zeros(self.bias)
+        
         self.running_mean = Tensor(np.zeros(num_features), requires_grad=False)
         self.running_var = Tensor(np.ones(num_features), requires_grad=False)
         
@@ -33,8 +38,12 @@ class LayerNorm(Layer):
         super().__init__()
         self.normalized_shape = normalized_shape if isinstance(normalized_shape, tuple) else (normalized_shape,)
         self.eps = eps
-        self.weight = Tensor(np.ones(normalized_shape), requires_grad=True)
-        self.bias = Tensor(np.zeros(normalized_shape), requires_grad=True)
+        
+        from .. import init
+        self.weight = Tensor(np.empty(normalized_shape), requires_grad=True)
+        init.ones(self.weight)
+        self.bias = Tensor(np.empty(normalized_shape), requires_grad=True)
+        init.zeros(self.bias)
         
     def forward(self, inputs: Tensor) -> Tensor:
         axes = tuple(range(-len(self.normalized_shape), 0))
@@ -51,8 +60,12 @@ class GroupNorm(Layer):
         self.num_groups = num_groups
         self.num_channels = num_channels
         self.eps = eps
-        self.weight = Tensor(np.ones(num_channels), requires_grad=True)
-        self.bias = Tensor(np.zeros(num_channels), requires_grad=True)
+        
+        from .. import init
+        self.weight = Tensor(np.empty(num_channels), requires_grad=True)
+        init.ones(self.weight)
+        self.bias = Tensor(np.empty(num_channels), requires_grad=True)
+        init.zeros(self.bias)
 
     def forward(self, inputs: Tensor) -> Tensor:
         N, C, H, W = inputs.shape
@@ -70,8 +83,12 @@ class InstanceNorm1D(Layer):
         super().__init__()
         self.num_features = num_features
         self.eps = eps
-        self.weight = Tensor(np.ones(num_features), requires_grad=True)
-        self.bias = Tensor(np.zeros(num_features), requires_grad=True)
+        
+        from .. import init
+        self.weight = Tensor(np.empty(num_features), requires_grad=True)
+        init.ones(self.weight)
+        self.bias = Tensor(np.empty(num_features), requires_grad=True)
+        init.zeros(self.bias)
 
     def forward(self, inputs: Tensor) -> Tensor:
         mean = inputs.mean(axis=2, keepdims=True)
@@ -85,8 +102,12 @@ class InstanceNorm2D(Layer):
         super().__init__()
         self.num_features = num_features
         self.eps = eps
-        self.weight = Tensor(np.ones(num_features), requires_grad=True)
-        self.bias = Tensor(np.zeros(num_features), requires_grad=True)
+        
+        from .. import init
+        self.weight = Tensor(np.empty(num_features), requires_grad=True)
+        init.ones(self.weight)
+        self.bias = Tensor(np.empty(num_features), requires_grad=True)
+        init.zeros(self.bias)
 
     def forward(self, inputs: Tensor) -> Tensor:
         mean = inputs.mean(axis=(2, 3), keepdims=True)

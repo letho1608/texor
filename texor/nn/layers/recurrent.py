@@ -23,12 +23,19 @@ class RNN(Layer):
         
         num_directions = 2 if bidirectional else 1
         
+        from .. import init
         for layer in range(num_layers):
             for _ in range(num_directions):
                 l_input_size = input_size if layer == 0 else hidden_size * num_directions
                 
-                self.w_ih.append(Tensor(np.random.randn(hidden_size, l_input_size) / np.sqrt(l_input_size), requires_grad=True))
-                self.w_hh.append(Tensor(np.random.randn(hidden_size, hidden_size) / np.sqrt(hidden_size), requires_grad=True))
+                w_ih = Tensor(np.empty((hidden_size, l_input_size)), requires_grad=True)
+                init.kaiming_uniform(w_ih, nonlinearity=nonlinearity)
+                self.w_ih.append(w_ih)
+                
+                w_hh = Tensor(np.empty((hidden_size, hidden_size)), requires_grad=True)
+                init.kaiming_uniform(w_hh, nonlinearity=nonlinearity)
+                self.w_hh.append(w_hh)
+                
                 self.b_ih.append(Tensor(np.zeros(hidden_size), requires_grad=True))
                 self.b_hh.append(Tensor(np.zeros(hidden_size), requires_grad=True))
 
@@ -80,12 +87,19 @@ class LSTM(Layer):
         
         num_directions = 2 if bidirectional else 1
         
+        from .. import init
         for layer in range(num_layers):
             for _ in range(num_directions):
                 l_input_size = input_size if layer == 0 else hidden_size * num_directions
                 
-                self.w_ih.append(Tensor(np.random.randn(4 * hidden_size, l_input_size) / np.sqrt(l_input_size), requires_grad=True))
-                self.w_hh.append(Tensor(np.random.randn(4 * hidden_size, hidden_size) / np.sqrt(hidden_size), requires_grad=True))
+                w_ih = Tensor(np.empty((4 * hidden_size, l_input_size)), requires_grad=True)
+                init.kaiming_uniform(w_ih, nonlinearity='sigmoid')
+                self.w_ih.append(w_ih)
+                
+                w_hh = Tensor(np.empty((4 * hidden_size, hidden_size)), requires_grad=True)
+                init.kaiming_uniform(w_hh, nonlinearity='sigmoid')
+                self.w_hh.append(w_hh)
+                
                 self.b_ih.append(Tensor(np.zeros(4 * hidden_size), requires_grad=True))
                 self.b_hh.append(Tensor(np.zeros(4 * hidden_size), requires_grad=True))
 
@@ -141,12 +155,19 @@ class GRU(Layer):
         
         num_directions = 2 if bidirectional else 1
         
+        from .. import init
         for layer in range(num_layers):
             for _ in range(num_directions):
                 l_input_size = input_size if layer == 0 else hidden_size * num_directions
                 
-                self.w_ih.append(Tensor(np.random.randn(3 * hidden_size, l_input_size) / np.sqrt(l_input_size), requires_grad=True))
-                self.w_hh.append(Tensor(np.random.randn(3 * hidden_size, hidden_size) / np.sqrt(hidden_size), requires_grad=True))
+                w_ih = Tensor(np.empty((3 * hidden_size, l_input_size)), requires_grad=True)
+                init.kaiming_uniform(w_ih, nonlinearity='sigmoid')
+                self.w_ih.append(w_ih)
+                
+                w_hh = Tensor(np.empty((3 * hidden_size, hidden_size)), requires_grad=True)
+                init.kaiming_uniform(w_hh, nonlinearity='sigmoid')
+                self.w_hh.append(w_hh)
+                
                 self.b_ih.append(Tensor(np.zeros(3 * hidden_size), requires_grad=True))
                 self.b_hh.append(Tensor(np.zeros(3 * hidden_size), requires_grad=True))
 
