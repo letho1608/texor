@@ -178,7 +178,7 @@ def dropout(x: Tensor, p: float = 0.5, training: bool = True, inplace: bool = Fa
     mask = Tensor(
         np.random.binomial(1, 1 - p, x.shape).astype(np.float32)
     )
-    return (x * mask) / (1 - p)
+    return (x * mask) * (1.0 / (1 - p))
 
 
 def alpha_dropout(x: Tensor, p: float = 0.5, training: bool = True) -> Tensor:
@@ -519,11 +519,23 @@ def conv2d(x: Tensor, weight: Tensor, bias: Optional[Tensor] = None,
         dilation_h, dilation_w = dilation
 
     # Backend only supports stride and padding, not dilation
-    return Tensor(backend.conv2d(
+    result_data = backend.conv2d(
         x.data, weight.data,
         stride=stride_h,
         padding=pad_h
-    ), requires_grad=x.requires_grad)
+    )
+    
+    requires_grad = x.requires_grad or weight.requires_grad
+    result = Tensor(result_data, requires_grad=requires_grad)
+    
+    if requires_grad:
+        from ..core.native_tensor import Conv2DBackward
+        result.grad_fn = Conv2DBackward(x, weight, stride_h, pad_h)
+        
+    if bias is not None:
+        result = result + bias.reshape((1, -1, 1, 1))
+        
+    return result
 
 
 def conv3d(x: Tensor, weight: Tensor, bias: Optional[Tensor] = None,
@@ -1278,6 +1290,100 @@ def cdist(x1: Tensor, x2: Tensor, p: float = 2.0) -> Tensor:
         Distance tensor of shape (N, M)
     """
     return pairwise_distance(x1, x2, p)
+
+
+def pixel_shuffle(x: Tensor, upscale_factor: int) -> Tensor:
+    """Pixel shuffle operation
+    
+    Rearranges elements in a tensor of shape (N, C, H, W) to a tensor of shape
+    (N, C / r^2, H * r, W * r), where r is upscale_factor.
+    """
+    N, C, H, W = x.shape
+    C_out = C // (upscale_factor ** 2)
+    H_out = H * upscale_factor
+    W_out = W * upscale_factor
+    
+    # Reshape and permute to perform pixel shuffle
+    x_reshaped = x.data.reshape(N, C_out, upscale_factor, upscale_factor, H, W)
+    # Permute to (N, C_out, H, upscale_factor, W, upscale_factor)
+    result = np.transpose(x_reshaped, (0, 1, 4, 2, 5, 3)).reshape(N, C_out, H_out, W_out)
+    
+    return Tensor(result, requires_grad=x.requires_grad)
+
+
+def upsample(x: Tensor, size: Optional[Union[int, Tuple[int, ...]]] = None,
+             scale_factor: Optional[Union[float, Tuple[float, ...]]] = None,
+             mode: str = 'nearest') -> Tensor:
+    """Upsample tensor
+    
+    Args:
+        x: Input tensor
+        size: Output spatial size
+        scale_factor: Multiplier for spatial size
+        mode: Interpolation mode ('nearest' or 'bilinear')
+    """
+    if scale_factor is not None:
+        if isinstance(scale_factor, (int, float)):
+            scale_factors = (scale_factor, scale_factor)
+        else:
+            scale_factors = scale_factor
+        
+        if x.data.ndim == 4:  # 2D
+            H_out = int(x.shape[2] * scale_factors[0])
+            W_out = int(x.shape[3] * scale_factors[1])
+        elif x.data.ndim == 3:  # 1D
+            H_out = int(x.shape[2] * scale_factors[0])
+            W_out = None
+        else:
+            raise ValueError(f"Unsupported input dimension: {x.data.ndim}")
+    elif size is not None:
+        if isinstance(size, int):
+            if x.data.ndim == 4:
+                H_out = W_out = size
+            else:
+                H_out = size
+                W_out = None
+        else:
+            H_out, W_out = size if isinstance(size, tuple) else (size, size)
+            if x.data.ndim == 4:
+                scale_factors = (H_out / x.shape[2], W_out / x.shape[3])
+            else:
+                scale_factors = (H_out / x.shape[2],)
+    else:
+        raise ValueError("Either size or scale_factor must be provided")
+    
+    if mode == 'nearest':
+        if x.data.ndim == 4:
+            result = np.repeat(np.repeat(x.data, int(scale_factors[0]), axis=2), int(scale_factors[1]), axis=3)
+        else:
+            result = np.repeat(x.data, int(scale_factors[0]), axis=2)
+    elif mode == 'bilinear':
+        # Simple bilinear interpolation
+        if x.data.ndim == 4:
+            N, C, H, W = x.shape
+            result = np.zeros((N, C, H_out, W_out))
+            for n in range(N):
+                for c in range(C):
+                    for h in range(H_out):
+                        for w in range(W_out):
+                            h_src = h / scale_factors[0]
+                            w_src = w / scale_factors[1]
+                            h0, w0 = int(h_src), int(w_src)
+                            h1, w1 = min(h0 + 1, H - 1), min(w0 + 1, W - 1)
+                            h_ratio = h_src - h0
+                            w_ratio = w_src - w0
+                            result[n, c, h, w] = (
+                                x.data[n, c, h0, w0] * (1 - h_ratio) * (1 - w_ratio) +
+                                x.data[n, c, h0, w1] * (1 - h_ratio) * w_ratio +
+                                x.data[n, c, h1, w0] * h_ratio * (1 - w_ratio) +
+                                x.data[n, c, h1, w1] * h_ratio * w_ratio
+                            )
+        else:
+            raise NotImplementedError("Bilinear upsampling for 1D not implemented")
+    else:
+        raise ValueError(f"Unknown upsampling mode: {mode}")
+    
+    return Tensor(result, requires_grad=x.requires_grad)
 
 
 # =============================================================================

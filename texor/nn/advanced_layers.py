@@ -2,7 +2,7 @@ from typing import Optional, Tuple, List, Callable
 import numpy as np
 from ..core import Tensor
 from ..core.native_backend import backend
-from .layers import Layer, Conv2d as Conv2D, BatchNorm2d as BatchNorm2D, Sequential, Linear, LayerNorm, Dropout
+from .layers import Layer, Conv2D, BatchNorm2D, Sequential, Linear, LayerNorm, Dropout
 from .activations import ReLU, Sigmoid, Tanh, Softmax, get_activation
 
 class ResidualBlock(Layer):

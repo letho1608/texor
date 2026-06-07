@@ -26,32 +26,16 @@ class ReLU(Activation):
         return inputs.relu()
 
 class Sigmoid(Activation):
-    """Sigmoid activation function with numerical stability"""
+    """Sigmoid activation function"""
     
     def forward(self, inputs: Tensor) -> Tensor:
-        # Numerically stable sigmoid implementation
-        data = inputs.data
-        # For positive values: 1 / (1 + exp(-x))
-        # For negative values: exp(x) / (1 + exp(x))
-        positive_mask = data >= 0
-        result = np.zeros_like(data)
-        
-        # Positive case
-        result[positive_mask] = 1 / (1 + np.exp(-data[positive_mask]))
-        
-        # Negative case
-        exp_x = np.exp(data[~positive_mask])
-        result[~positive_mask] = exp_x / (1 + exp_x)
-        
-        return Tensor(result, requires_grad=inputs.requires_grad)
+        return inputs.sigmoid()
 
 class Tanh(Activation):
     """Hyperbolic tangent activation function"""
     
     def forward(self, inputs: Tensor) -> Tensor:
-        data = inputs.data
-        result = np.tanh(data)
-        return Tensor(result, requires_grad=inputs.requires_grad)
+        return inputs.tanh()
 
 class LeakyReLU(Activation):
     """Leaky ReLU activation function"""
@@ -63,20 +47,11 @@ class LeakyReLU(Activation):
         self.alpha = alpha
         
     def forward(self, inputs: Tensor) -> Tensor:
-        if backend.current == 'tensorflow':
-            return backend.leaky_relu(inputs, self.alpha)
-        x = inputs.numpy()
-        return Tensor(np.where(x > 0, x, self.alpha * x))
-        
-    def backward(self, grad: Tensor) -> Tensor:
-        if self.cached_input is None:
-            raise RuntimeError("Backward called before forward!")
-        x = self.cached_input.numpy()
-        dx = np.where(x > 0, 1, self.alpha)
-        return grad * dx
-        
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(alpha={self.alpha})"
+        # Simplified: use Tensor operations to preserve graph
+        # alpha * x if x < 0 else x
+        # This is a bit tricky without a clamp or where in Tensor
+        # But we can use: relu(x) - alpha * relu(-x)
+        return inputs.relu() - self.alpha * ((-inputs).relu())
 
 class ELU(Activation):
     """Exponential Linear Unit activation function"""
@@ -88,37 +63,25 @@ class ELU(Activation):
         self.alpha = alpha
         
     def forward(self, inputs: Tensor) -> Tensor:
-        if backend.current == 'tensorflow':
-            return backend.elu(inputs, self.alpha)
-        x = inputs.numpy()
-        return Tensor(np.where(x > 0, x, self.alpha * (np.exp(x) - 1)))
-        
-    def backward(self, grad: Tensor) -> Tensor:
-        if self.cached_input is None:
-            raise RuntimeError("Backward called before forward!")
-        x = self.cached_input.numpy()
-        dx = np.where(x > 0, 1, self.alpha * np.exp(x))
-        return grad * dx
-        
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(alpha={self.alpha})"
+        # ELU(x) = alpha * (exp(x) - 1) if x < 0 else x
+        # Again, tricky without where. 
+        # For now, let's use a simplified version if possible or just the data-based one if we must,
+        # but data-based one breaks the graph.
+        # Let's try to use relu and exp.
+        # ELU(x) = relu(x) + min(0, alpha * (exp(x) - 1))
+        # Since x < 0 => exp(x) - 1 < 0
+        return inputs.relu() - self.alpha * (1 - inputs.exp()).relu()
 
 class Softmax(Activation):
     """Softmax activation function"""
     
-    def forward(self, inputs: Tensor) -> Tensor:
-        if backend.current == 'tensorflow':
-            return backend.softmax(inputs)
-        x = inputs.numpy()
-        exp_x = np.exp(x - np.max(x, axis=-1, keepdims=True))
-        return Tensor(exp_x / np.sum(exp_x, axis=-1, keepdims=True))
+    def __init__(self, axis: int = -1):
+        super().__init__()
+        self.axis = axis
         
-    def backward(self, grad: Tensor) -> Tensor:
-        if self.cached_input is None:
-            raise RuntimeError("Backward called before forward!")
-        # Gradient of softmax is more complex and usually combined with cross-entropy loss
-        # for numerical stability. See CrossEntropyLoss implementation.
-        raise NotImplementedError("Softmax backward should be handled by CrossEntropyLoss")
+    def forward(self, inputs: Tensor) -> Tensor:
+        return inputs.softmax(axis=self.axis)
+
 
 class GELU(Activation):
     """Gaussian Error Linear Unit activation function"""

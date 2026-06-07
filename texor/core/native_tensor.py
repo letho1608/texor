@@ -84,21 +84,68 @@ class Conv2DBackward(GradientFunction):
         self.padding = padding
         
     def backward(self, grad_output: 'Tensor') -> Tuple[Optional['Tensor'], ...]:
-        # Simplified backward pass for conv2d
-        # In practice, this would be more complex
         input_tensor, weight = self.inputs
+        stride = self.stride
+        padding = self.padding
         
-        # Gradient w.r.t input (deconvolution)
+        # Format padding
+        if isinstance(padding, int):
+            pad_h = pad_w = padding
+        else:
+            pad_h, pad_w = padding
+            
+        if isinstance(stride, int):
+            stride_h = stride_w = stride
+        else:
+            stride_h, stride_w = stride
+            
+        N, C_in, H_in, W_in = input_tensor.shape
+        C_out, _, kH, kW = weight.shape
+        _, _, H_out, W_out = grad_output.shape
+        
+        # Apply padding to input
+        if pad_h > 0 or pad_w > 0:
+            x_padded = np.pad(input_tensor.data, 
+                              ((0, 0), (0, 0), (pad_h, pad_h), (pad_w, pad_w)), 
+                              mode='constant')
+        else:
+            x_padded = input_tensor.data
+            
         grad_input = None
         if self.needs_input_grad[0]:
-            # This is a simplified version - full implementation would use transposed convolution
-            grad_input = Tensor(np.zeros_like(input_tensor.data))
-        
-        # Gradient w.r.t weight
+            grad_x_padded = np.zeros_like(x_padded)
+            # Compute gradient w.r.t input
+            # dx = grad_output * weight (transposed)
+            for n in range(N):
+                for c_out in range(C_out):
+                    for h in range(H_out):
+                        for w in range(W_out):
+                            h_start = h * stride_h
+                            w_start = w * stride_w
+                            grad_x_padded[n, :, h_start:h_start+kH, w_start:w_start+kW] += \
+                                weight.data[c_out] * grad_output.data[n, c_out, h, w]
+            
+            # Remove padding
+            if pad_h > 0 or pad_w > 0:
+                grad_x = grad_x_padded[:, :, pad_h:-pad_h, pad_w:-pad_w]
+            else:
+                grad_x = grad_x_padded
+            grad_input = Tensor(grad_x)
+            
         grad_weight = None
         if self.needs_input_grad[1]:
-            # This is a simplified version - full implementation would correlate input with grad_output
-            grad_weight = Tensor(np.zeros_like(weight.data))
+            grad_w = np.zeros_like(weight.data)
+            # Compute gradient w.r.t weight
+            # dw = x * grad_output
+            for n in range(N):
+                for c_out in range(C_out):
+                    for h in range(H_out):
+                        for w in range(W_out):
+                            h_start = h * stride_h
+                            w_start = w * stride_w
+                            patch = x_padded[n, :, h_start:h_start+kH, w_start:w_start+kW]
+                            grad_w[c_out] += patch * grad_output.data[n, c_out, h, w]
+            grad_weight = Tensor(grad_w)
             
         return grad_input, grad_weight
 
@@ -156,6 +203,150 @@ class LogBackward(GradientFunction):
         else:
             grad_input = None
         return (grad_input,)
+
+
+class NegBackward(GradientFunction):
+    """Gradient function for negation"""
+    
+    def backward(self, grad_output: 'Tensor') -> Tuple[Optional['Tensor'], ...]:
+        return (-grad_output,) if self.needs_input_grad[0] else (None,)
+
+
+class SubBackward(GradientFunction):
+    """Gradient function for subtraction"""
+    
+    def backward(self, grad_output: 'Tensor') -> Tuple[Optional['Tensor'], ...]:
+        a, b = self.inputs
+        grad_a = grad_output if self.needs_input_grad[0] else None
+        grad_b = (-grad_output) if self.needs_input_grad[1] else None
+        
+        # Handle broadcasting
+        if grad_a is not None and grad_a.shape != a.shape:
+            grad_a = self._reduce_gradient(grad_a, a.shape)
+        if grad_b is not None and grad_b.shape != b.shape:
+            grad_b = self._reduce_gradient(grad_b, b.shape)
+            
+        return grad_a, grad_b
+
+    def _reduce_gradient(self, grad: 'Tensor', target_shape: Tuple[int, ...]) -> 'Tensor':
+        """Reduce gradient to match target shape"""
+        # Sum over axes that were broadcasted
+        ndim_added = grad.data.ndim - len(target_shape)
+        for i in range(ndim_added):
+            grad = Tensor(np.sum(grad.data, axis=0), requires_grad=False)
+        
+        # Sum over axes that are size 1 in target but not in grad
+        for i, (grad_dim, target_dim) in enumerate(zip(grad.shape, target_shape)):
+            if target_dim == 1 and grad_dim > 1:
+                grad = Tensor(np.sum(grad.data, axis=i, keepdims=True), requires_grad=False)
+                
+        return grad
+
+
+class DivBackward(GradientFunction):
+    """Gradient function for division"""
+    
+    def backward(self, grad_output: 'Tensor') -> Tuple[Optional['Tensor'], ...]:
+        a, b = self.inputs
+        # d/da (a/b) = 1/b
+        grad_a = grad_output / b if self.needs_input_grad[0] else None
+        # d/db (a/b) = -a/b^2
+        grad_b = grad_output * (-a / (b * b)) if self.needs_input_grad[1] else None
+        
+        # Handle broadcasting
+        if grad_a is not None and grad_a.shape != a.shape:
+            grad_a = self._reduce_gradient(grad_a, a.shape)
+        if grad_b is not None and grad_b.shape != b.shape:
+            grad_b = self._reduce_gradient(grad_b, b.shape)
+            
+        return grad_a, grad_b
+
+    def _reduce_gradient(self, grad: 'Tensor', target_shape: Tuple[int, ...]) -> 'Tensor':
+        """Reduce gradient to match target shape"""
+        # Sum over axes that were broadcasted
+        ndim_added = grad.data.ndim - len(target_shape)
+        for i in range(ndim_added):
+            grad = Tensor(np.sum(grad.data, axis=0), requires_grad=False)
+        
+        # Sum over axes that are size 1 in target but not in grad
+        for i, (grad_dim, target_dim) in enumerate(zip(grad.shape, target_shape)):
+            if target_dim == 1 and grad_dim > 1:
+                grad = Tensor(np.sum(grad.data, axis=i, keepdims=True), requires_grad=False)
+                
+        return grad
+
+
+class ReshapeBackward(GradientFunction):
+    """Gradient function for reshape operations"""
+    
+    def __init__(self, input_tensor: 'Tensor', original_shape: Tuple[int, ...]):
+        super().__init__(input_tensor)
+        self.original_shape = original_shape
+    
+    def backward(self, grad_output: 'Tensor') -> Tuple[Optional['Tensor'], ...]:
+        if not self.needs_input_grad[0]:
+            return None,
+        return Tensor(grad_output.data.reshape(self.original_shape)),
+
+
+class TransposeBackward(GradientFunction):
+    """Gradient function for transpose operations"""
+    
+    def backward(self, grad_output: 'Tensor') -> Tuple[Optional['Tensor'], ...]:
+        if not self.needs_input_grad[0]:
+            return None,
+        return Tensor(grad_output.data.T),
+
+
+class SigmoidBackward(GradientFunction):
+    """Gradient function for sigmoid"""
+    
+    def backward(self, grad_output: 'Tensor') -> Tuple[Optional['Tensor'], ...]:
+        input_tensor = self.inputs[0]
+        if not self.needs_input_grad[0]:
+            return None,
+        
+        # s = 1 / (1 + exp(-x))
+        # ds/dx = s * (1 - s)
+        s_data = backend.sigmoid(input_tensor.data)
+        grad_input = grad_output.data * s_data * (1 - s_data)
+        return Tensor(grad_input),
+
+
+class TanhBackward(GradientFunction):
+    """Gradient function for tanh"""
+    
+    def backward(self, grad_output: 'Tensor') -> Tuple[Optional['Tensor'], ...]:
+        input_tensor = self.inputs[0]
+        if not self.needs_input_grad[0]:
+            return None,
+        
+        # t = tanh(x)
+        # dt/dx = 1 - t^2
+        t_data = backend.tanh(input_tensor.data)
+        grad_input = grad_output.data * (1 - t_data**2)
+        return Tensor(grad_input),
+
+
+class SoftmaxBackward(GradientFunction):
+    """Gradient function for softmax"""
+    
+    def __init__(self, input_tensor: 'Tensor', axis: int):
+        super().__init__(input_tensor)
+        self.axis = axis
+        
+    def backward(self, grad_output: 'Tensor') -> Tuple[Optional['Tensor'], ...]:
+        input_tensor = self.inputs[0]
+        if not self.needs_input_grad[0]:
+            return None,
+            
+        # s = softmax(x)
+        # ds/dx = s * (1 - s) for same index, -s_i * s_j for different indices
+        # Simplified vector-form: grad_input = s * (grad_output - sum(grad_output * s))
+        s_data = backend.softmax(input_tensor.data, axis=self.axis)
+        grad_input = s_data * (grad_output.data - np.sum(grad_output.data * s_data, axis=self.axis, keepdims=True))
+        
+        return Tensor(grad_input),
 
 
 class SumBackward(GradientFunction):
@@ -273,6 +464,12 @@ class Tensor:
         """Get tensor dtype"""
         return self.data.dtype
     
+    def __len__(self) -> int:
+        """Get length of first dimension"""
+        if len(self.shape) == 0:
+            return 1
+        return self.shape[0]
+    
     @property
     def device(self) -> str:
         """Get tensor device"""
@@ -304,6 +501,12 @@ class Tensor:
             except ImportError:
                 pass
         return self.data
+    
+    def __array__(self, dtype=None) -> np.ndarray:
+        """NumPy array interface"""
+        if dtype:
+            return self.numpy().astype(dtype)
+        return self.numpy()
     
     def item(self) -> float:
         """Get scalar value"""
@@ -363,7 +566,41 @@ class Tensor:
         """Subtraction"""
         if isinstance(other, (int, float)):
             other = Tensor(np.full_like(self.data, other))
-        return self + (-other)
+        elif not isinstance(other, Tensor):
+            other = Tensor(other)
+            
+        result_data = self.data - other.data
+        result = Tensor(result_data, requires_grad=self.requires_grad or other.requires_grad)
+        
+        if result.requires_grad:
+            result.grad_fn = SubBackward(self, other)
+            
+        return result
+
+    def __rsub__(self, other: Union[float, int]) -> 'Tensor':
+        if isinstance(other, (int, float)):
+            other = Tensor(np.full_like(self.data, other))
+        return other - self
+
+    def __truediv__(self, other: Union['Tensor', float, int]) -> 'Tensor':
+        """Division"""
+        if isinstance(other, (int, float)):
+            other = Tensor(np.full_like(self.data, other))
+        elif not isinstance(other, Tensor):
+            other = Tensor(other)
+            
+        result_data = self.data / other.data
+        result = Tensor(result_data, requires_grad=self.requires_grad or other.requires_grad)
+        
+        if result.requires_grad:
+            result.grad_fn = DivBackward(self, other)
+            
+        return result
+
+    def __rtruediv__(self, other: Union[float, int]) -> 'Tensor':
+        if isinstance(other, (int, float)):
+            other = Tensor(np.full_like(self.data, other))
+        return other / self
     
     def __mul__(self, other: Union['Tensor', float, int]) -> 'Tensor':
         """Element-wise multiplication"""
@@ -403,12 +640,28 @@ class Tensor:
     
     def __neg__(self) -> 'Tensor':
         """Negation"""
-        return Tensor(-self.data, requires_grad=self.requires_grad)
+        result = Tensor(-self.data, requires_grad=self.requires_grad)
+        if result.requires_grad:
+            result.grad_fn = NegBackward(self)
+        return result
     
     def __getitem__(self, key) -> 'Tensor':
         """Indexing"""
         return Tensor(self.data[key], requires_grad=self.requires_grad)
     
+    def abs(self) -> 'Tensor':
+        """Absolute value"""
+        result_data = np.abs(self.data)
+        result = Tensor(result_data, requires_grad=self.requires_grad)
+        # Simplified: for abs(x), grad is sign(x)
+        if result.requires_grad:
+            class AbsBackward(GradientFunction):
+                def backward(self, grad_output: 'Tensor') -> Tuple[Optional['Tensor'], ...]:
+                    input_tensor = self.inputs[0]
+                    return (grad_output * np.sign(input_tensor.data),)
+            result.grad_fn = AbsBackward(self)
+        return result
+
     def sum(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
         """Sum along axis"""
         result_data = np.sum(self.data, axis=axis, keepdims=keepdims)
@@ -432,12 +685,24 @@ class Tensor:
     def reshape(self, shape: Tuple[int, ...]) -> 'Tensor':
         """Reshape tensor"""
         result_data = self.data.reshape(shape)
-        return Tensor(result_data, requires_grad=self.requires_grad)
+        result = Tensor(result_data, requires_grad=self.requires_grad)
+        if result.requires_grad:
+            result.grad_fn = ReshapeBackward(self, self.shape)
+        return result
     
     def view(self, shape: Tuple[int, ...]) -> 'Tensor':
         """View tensor with new shape (alias for reshape)"""
         return self.reshape(shape)
     
+    def transpose(self) -> 'Tensor':
+        """Transpose (2D only)"""
+        if len(self.shape) != 2:
+            raise ValueError("Transpose only supported for 2D tensors")
+        result = Tensor(self.data.T, requires_grad=self.requires_grad)
+        if result.requires_grad:
+            result.grad_fn = TransposeBackward(self)
+        return result
+
     def relu(self) -> 'Tensor':
         """ReLU activation"""
         result_data = backend.relu(self.data)
@@ -445,6 +710,26 @@ class Tensor:
         
         if result.requires_grad:
             result.grad_fn = ReLUBackward(self)
+        
+        return result
+    
+    def sigmoid(self) -> 'Tensor':
+        """Sigmoid activation"""
+        result_data = backend.sigmoid(self.data)
+        result = Tensor(result_data, requires_grad=self.requires_grad)
+        
+        if result.requires_grad:
+            result.grad_fn = SigmoidBackward(self)
+        
+        return result
+
+    def tanh(self) -> 'Tensor':
+        """Tanh activation"""
+        result_data = backend.tanh(self.data)
+        result = Tensor(result_data, requires_grad=self.requires_grad)
+        
+        if result.requires_grad:
+            result.grad_fn = TanhBackward(self)
         
         return result
     
@@ -485,7 +770,71 @@ class Tensor:
     def softmax(self, axis: int = -1) -> 'Tensor':
         """Softmax activation"""
         result_data = backend.softmax(self.data, axis=axis)
-        return Tensor(result_data, requires_grad=self.requires_grad)
+        result = Tensor(result_data, requires_grad=self.requires_grad)
+        
+        if result.requires_grad:
+            result.grad_fn = SoftmaxBackward(self, axis)
+            
+        return result
+    
+    def broadcast_to(self, shape: Tuple[int, ...]) -> 'Tensor':
+        """Broadcast tensor to new shape"""
+        if self.shape == shape:
+            return self
+            
+        result_data = np.broadcast_to(self.data, shape)
+        result = Tensor(result_data, requires_grad=self.requires_grad)
+        
+        if result.requires_grad:
+            class BroadcastBackward(GradientFunction):
+                def __init__(self, input_tensor: 'Tensor'):
+                    super().__init__(input_tensor)
+                    self.original_shape = input_tensor.shape
+                
+                def backward(self, grad_output: 'Tensor') -> Tuple[Optional['Tensor'], ...]:
+                    if not self.needs_input_grad[0]:
+                        return None,
+                    # Reducing broadcast is a sum
+                    grad = grad_output.data
+                    ndim_added = grad.ndim - len(self.original_shape)
+                    for _ in range(ndim_added):
+                        grad = np.sum(grad, axis=0)
+                    
+                    for i, (dim, orig_dim) in enumerate(zip(grad.shape, self.original_shape)):
+                        if orig_dim == 1 and dim > 1:
+                            grad = np.sum(grad, axis=i, keepdims=True)
+                            
+                    return Tensor(grad),
+            
+            result.grad_fn = BroadcastBackward(self)
+            
+        return result
+
+    def gather(self, axis: int, index: 'Tensor') -> 'Tensor':
+        """Gather values along an axis specified by index"""
+        result_data = backend.gather(self.data, index.data.astype(int), axis=axis)
+        result = Tensor(result_data, requires_grad=self.requires_grad)
+        
+        if result.requires_grad:
+            class GatherBackward(GradientFunction):
+                def __init__(self, input_tensor: 'Tensor', axis: int, index: 'Tensor'):
+                    super().__init__(input_tensor, index)
+                    self.axis = axis
+                    self.index = index
+                
+                def backward(self, grad_output: 'Tensor') -> Tuple[Optional['Tensor'], ...]:
+                    input_tensor = self.inputs[0]
+                    if not self.needs_input_grad[0]:
+                        return None, None
+                    
+                    # Gradient of gather is scatter_add
+                    grad_input = np.zeros_like(input_tensor.data)
+                    np.add.at(grad_input, (slice(None),) * self.axis + (self.index.data.astype(int),), grad_output.data)
+                    return Tensor(grad_input), None
+            
+            result.grad_fn = GatherBackward(self, axis, index)
+            
+        return result
     
     def __repr__(self) -> str:
         """String representation"""

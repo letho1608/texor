@@ -7,40 +7,45 @@ activations, loss functions, and functional operations.
 # Import functional module
 from . import functional as F
 
-# Import layers
+# Import layers from the new layers subpackage
 from .layers import (
     Layer,
     Linear,
-    Conv2D,
+    Embedding,
     Conv1D,
+    Conv2D,
     Conv3D,
-    ConvTranspose2d,
+    ConvTranspose2D,
     MaxPool2D,
+    AvgPool2D,
     MaxPool3D,
     AvgPool3D,
+    AdaptiveAvgPool2D,
     BatchNorm2D,
     LayerNorm,
     GroupNorm,
-    InstanceNorm1d,
-    InstanceNorm2d,
+    InstanceNorm1D,
+    InstanceNorm2D,
+    Sequential,
+    ModuleList,
     Dropout,
     Dropout2D,
     Dropout3D,
-    AdaptiveAvgPool2d,
-    Embedding,
     Flatten,
     Reshape,
-    Sequential,
+    PixelShuffle,
+    Upsample,
+    LazyLinear,
+    RNN,
+    LSTM,
+    GRU,
+    SelfAttention,
     MultiheadAttention,
     TransformerEncoderLayer,
     TransformerDecoderLayer,
     TransformerEncoder,
     TransformerDecoder,
-    Transformer,
-    PixelShuffle,
-    Upsample,
-    LazyLinear,
-    Reshape as ReshapeLayer,
+    Transformer
 )
 
 # Import activations
@@ -54,6 +59,9 @@ from .activations import (
     GELU,
     get_activation,
 )
+
+# Import init
+from . import init
 
 # Import loss functions
 from .loss import (
@@ -78,35 +86,41 @@ __all__ = [
     # Layers
     'Layer',
     'Linear',
-    'Conv2D',
+    'Embedding',
     'Conv1D',
+    'Conv2D',
     'Conv3D',
-    'ConvTranspose2d',
+    'ConvTranspose2D',
     'MaxPool2D',
+    'AvgPool2D',
     'MaxPool3D',
     'AvgPool3D',
+    'AdaptiveAvgPool2D',
     'BatchNorm2D',
     'LayerNorm',
     'GroupNorm',
-    'InstanceNorm1d',
-    'InstanceNorm2d',
+    'InstanceNorm1D',
+    'InstanceNorm2D',
+    'Sequential',
+    'ModuleList',
     'Dropout',
     'Dropout2D',
     'Dropout3D',
-    'AdaptiveAvgPool2d',
-    'Embedding',
     'Flatten',
     'Reshape',
-    'Sequential',
+    'PixelShuffle',
+    'Upsample',
+    'LazyLinear',
+    'RNN',
+    'LSTM',
+    'GRU',
+    'SelfAttention',
     'MultiheadAttention',
     'TransformerEncoderLayer',
     'TransformerDecoderLayer',
     'TransformerEncoder',
     'TransformerDecoder',
     'Transformer',
-    'PixelShuffle',
-    'Upsample',
-    'LazyLinear',
     
     # Activations
     'ReLU',
@@ -117,6 +131,9 @@ __all__ = [
     'Softmax',
     'GELU',
     'get_activation',
+    
+    # Init
+    'init',
     
     # Loss functions
     'MSELoss',

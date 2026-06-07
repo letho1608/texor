@@ -139,31 +139,30 @@ class MemoryPool:
 
 
 # JIT compiled operations for performance
-@jit(nopython=True)
 def _matmul_cpu(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Optimized CPU matrix multiplication"""
-    return np.dot(a, b)
+    return np.matmul(a, b)
 
 
-@jit(nopython=True, parallel=True)
+@jit(nopython=True)
 def _add_cpu(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Optimized CPU addition"""
     return a + b
 
 
-@jit(nopython=True, parallel=True)
+@jit(nopython=True)
 def _subtract_cpu(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Optimized CPU subtraction"""
     return a - b
 
 
-@jit(nopython=True, parallel=True)
+@jit(nopython=True)
 def _multiply_cpu(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Optimized CPU element-wise multiplication"""
     return a * b
 
 
-@jit(nopython=True, parallel=True)
+@jit(nopython=True)
 def _divide_cpu(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Optimized CPU element-wise division"""
     return a / b
@@ -436,6 +435,22 @@ class NativeBackend:
             return cp.log(x_gpu)
         else:
             return _log_cpu(x)
+    
+    def softmax(self, x: np.ndarray, axis: int = -1) -> np.ndarray:
+        """Softmax operation with device optimization"""
+        device = self.get_device()
+        
+        if device == 'cuda' and HAS_GPU:
+            x_gpu = self.to_device(x, 'cuda')
+            # Numerically stable softmax
+            x_max = cp.max(x_gpu, axis=axis, keepdims=True)
+            exp_x = cp.exp(x_gpu - x_max)
+            return exp_x / cp.sum(exp_x, axis=axis, keepdims=True)
+        else:
+            # Numerically stable softmax
+            x_max = np.max(x, axis=axis, keepdims=True)
+            exp_x = np.exp(x - x_max)
+            return exp_x / np.sum(exp_x, axis=axis, keepdims=True)
     
     def zeros(self, shape: Tuple[int, ...], dtype: np.dtype = np.float32) -> np.ndarray:
         """Create zero tensor"""

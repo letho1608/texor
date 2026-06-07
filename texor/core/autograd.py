@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Tuple, Union
 import numpy as np
 
 if TYPE_CHECKING:
-    from .tensor import Tensor
+    from .native_tensor import Tensor
 
 class Context:
     """Base class for all autograd contexts"""
@@ -55,7 +55,7 @@ def backward(tensor: 'Tensor',
         retain_graph: Whether to keep computation graph for multiple backward passes
     """
     # Import Tensor here to avoid circular import
-    from .tensor import Tensor
+    from .native_tensor import Tensor
     
     # If no external gradient provided, use ones
     if gradient is None:

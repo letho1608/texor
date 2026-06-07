@@ -1,7 +1,7 @@
 """Basic operations for Tensor class"""
 from typing import Union, Tuple, Optional
 import numpy as np
-from .tensor import Tensor
+from .native_tensor import Tensor
 
 # Enhanced tensor operations with better performance
 # Added optimized implementations for common operations

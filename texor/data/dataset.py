@@ -102,6 +102,8 @@ class DataLoaderIterator:
         
     def __next__(self) -> Tuple[Tensor, ...]:
         if self.index >= len(self.dataset):
+            if hasattr(self, 'executor'):
+                self.executor.shutdown()
             raise StopIteration
             
         # Get indices for current batch
@@ -111,11 +113,18 @@ class DataLoaderIterator:
         
         # Check if we should drop last incomplete batch
         if len(batch_indices) < self.batch_size and self.drop_last:
+            if hasattr(self, 'executor'):
+                self.executor.shutdown()
             raise StopIteration
             
         # Get items for current batch
         try:
-            batch = [self.dataset[i] for i in batch_indices]
+            if hasattr(self, 'executor'):
+                # Parallel loading
+                batch = list(self.executor.map(lambda i: self.dataset[i], batch_indices))
+            else:
+                # Sequential loading
+                batch = [self.dataset[i] for i in batch_indices]
         except Exception as e:
             raise RuntimeError(f"Error loading batch: {str(e)}")
         
@@ -133,8 +142,8 @@ class DataLoaderIterator:
             
     def _init_workers(self):
         """Initialize worker processes for parallel loading"""
-        # TODO: Implement multiprocessing for data loading
-        pass
+        from concurrent.futures import ThreadPoolExecutor
+        self.executor = ThreadPoolExecutor(max_workers=self.loader.num_workers)
 
 class ArrayDataset(Dataset):
     """Dataset wrapping numpy arrays"""

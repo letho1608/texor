@@ -85,47 +85,44 @@ class CrossEntropyLoss(Loss):
         if isinstance(targets, np.ndarray):
             targets = Tensor(targets)
             
-        pred_data = predictions.data
-        target_data = targets.data
-        
         # Check if targets are class indices or one-hot
-        if target_data.ndim == pred_data.ndim - 1:
-            # Class indices - convert to one-hot
-            num_classes = pred_data.shape[-1]
-            target_one_hot = np.zeros_like(pred_data)
+        if targets.data.ndim == predictions.data.ndim - 1:
+            # Class indices - convert to one-hot for easier computation
+            num_classes = predictions.shape[-1]
+            target_data = targets.data
+            target_one_hot = np.zeros(predictions.shape)
             target_indices = target_data.flatten().astype(int)
             batch_indices = np.arange(target_indices.size)
             target_one_hot.reshape(-1, num_classes)[batch_indices, target_indices] = 1
-            target_one_hot = target_one_hot.reshape(pred_data.shape)
-            target_data = target_one_hot
+            target_one_hot = target_one_hot.reshape(predictions.shape)
+            targets = Tensor(target_one_hot)
         
-        # Apply softmax for numerical stability
-        exp_pred = np.exp(pred_data - np.max(pred_data, axis=-1, keepdims=True))
-        softmax_pred = exp_pred / np.sum(exp_pred, axis=-1, keepdims=True)
+        # Apply softmax and compute log
+        softmax_pred = predictions.softmax(axis=-1)
         
-        # Compute cross entropy
-        losses = -np.sum(target_data * np.log(softmax_pred + 1e-7), axis=-1)
+        # Compute cross entropy: -sum(target * log(pred))
+        eps = 1e-7
+        losses = -(targets * (softmax_pred + eps).log()).sum(axis=-1)
         
         # Apply weight if provided
         if self.weight is not None:
-            if target_data.ndim > 1:
-                class_indices = np.argmax(target_data, axis=-1)
-                weight_mask = self.weight[class_indices]
-                losses = losses * weight_mask
+            weight_tensor = Tensor(self.weight)
+            if targets.data.ndim > 1:
+                class_indices = np.argmax(targets.data, axis=-1)
+                weight_mask = weight_tensor.data[class_indices]
+                losses = losses * Tensor(weight_mask)
             else:
-                losses = losses * self.weight
+                losses = losses * weight_tensor
             
         # Handle ignore_index
         if self.ignore_index >= 0:
-            if target_data.ndim > 1:
-                mask = np.any(target_data == self.ignore_index, axis=-1)
+            if targets.data.ndim > 1:
+                mask = np.any(targets.data == self.ignore_index, axis=-1)
             else:
-                mask = target_data == self.ignore_index
-            losses = np.where(mask, 0, losses)
+                mask = targets.data == self.ignore_index
+            losses = losses * Tensor((~mask).astype(np.float32))
         
-        # Create tensor and apply reduction
-        loss_tensor = Tensor(losses, requires_grad=predictions.requires_grad)
-        return self._apply_reduction(loss_tensor)
+        return self._apply_reduction(losses)
 
 class BCELoss(Loss):
     """Binary Cross Entropy Loss"""
@@ -140,19 +137,14 @@ class BCELoss(Loss):
         if isinstance(targets, np.ndarray):
             targets = Tensor(targets)
             
-        pred_data = predictions.data
-        target_data = targets.data
-        
-        # Clip predictions for numerical stability
-        pred_data = np.clip(pred_data, 1e-7, 1 - 1e-7)
-        losses = -target_data * np.log(pred_data) - (1 - target_data) * np.log(1 - pred_data)
+        # Stay in Tensor land to preserve gradients
+        eps = 1e-7
+        losses = -(targets * (predictions + eps).log() + (1 - targets) * (1 - predictions + eps).log())
         
         if self.weight is not None:
-            losses = losses * self.weight
+            losses = losses * Tensor(self.weight)
         
-        # Create tensor and apply reduction    
-        loss_tensor = Tensor(losses, requires_grad=predictions.requires_grad)
-        return self._apply_reduction(loss_tensor)
+        return self._apply_reduction(losses)
 
 class L1Loss(Loss):
     """Mean Absolute Error Loss"""
@@ -167,9 +159,7 @@ class L1Loss(Loss):
             
         # Calculate absolute differences using tensor operations
         diff = predictions - targets
-        abs_diff = diff.abs() if hasattr(diff, 'abs') else Tensor(np.abs(diff.data))
-        
-        return self._apply_reduction(abs_diff)
+        return self._apply_reduction(diff.abs())
 
 class HuberLoss(Loss):
     """Huber Loss (smooth L1 loss)"""
@@ -186,19 +176,25 @@ class HuberLoss(Loss):
             targets = Tensor(targets)
             
         diff = predictions - targets
-        abs_diff = Tensor(np.abs(diff.data))
+        abs_diff = diff.abs()
         
-        quadratic = Tensor(np.minimum(abs_diff.data, self.delta))
-        linear = abs_diff - quadratic
-        losses = quadratic * quadratic * 0.5 + linear * self.delta
+        # Piecewise function implemented with tensor ops to preserve graph
+        # quadratic if abs_diff <= delta, else linear
+        # min(abs_diff, delta) = abs_diff - relu(abs_diff - delta)
+        quadratic_part = abs_diff - (abs_diff - self.delta).relu()
+        linear_part = abs_diff - quadratic_part
+        
+        losses = 0.5 * quadratic_part * quadratic_part + linear_part * self.delta
         
         return self._apply_reduction(losses)
 
 class SmoothL1Loss(Loss):
-    """Smooth L1 Loss (same as Huber with delta=1.0)"""
+    """Smooth L1 Loss (similar to Huber with beta parameter)"""
     
     def __init__(self, beta: float = 1.0, reduction: str = 'mean'):
         super().__init__(reduction)
+        if beta <= 0:
+            raise ValueError("beta must be positive")
         self.beta = beta
         
     def forward(self, predictions: Tensor, targets: Tensor) -> Tensor:
@@ -207,11 +203,15 @@ class SmoothL1Loss(Loss):
             targets = Tensor(targets)
             
         diff = predictions - targets
-        abs_diff = Tensor(np.abs(diff.data))
+        abs_diff = diff.abs()
         
-        losses = Tensor(np.where(abs_diff.data < self.beta,
-                         0.5 * diff.data ** 2 / self.beta,
-                         abs_diff.data - 0.5 * self.beta))
+        # Piecewise function: 0.5 * x^2 / beta if |x| < beta, else |x| - 0.5 * beta
+        # Piece in [0, beta]: quadratic_part = min(abs_diff, beta)
+        quadratic_part = abs_diff - (abs_diff - self.beta).relu()
+        # Piece in [beta, inf]: linear_part = relu(abs_diff - beta)
+        linear_part = (abs_diff - self.beta).relu()
+        
+        losses = 0.5 * quadratic_part * quadratic_part / self.beta + linear_part
         
         return self._apply_reduction(losses)
 
@@ -227,19 +227,18 @@ class KLDivLoss(Loss):
         if isinstance(targets, np.ndarray):
             targets = Tensor(targets)
             
-        pred_data = predictions.data
-        target_data = targets.data
-        
         if self.log_target:
             # Both inputs are in log space
-            losses = np.exp(target_data) * (target_data - pred_data)
+            # losses = exp(target) * (target - predictions)
+            losses = targets.exp() * (targets - predictions)
         else:
             # Predictions in log space, targets in probability space
-            losses = target_data * (np.log(target_data + 1e-7) - pred_data)
+            # losses = target * (log(target) - predictions)
+            eps = 1e-7
+            losses = targets * ((targets + eps).log() - predictions)
             
-        losses = np.sum(losses, axis=-1)
-        loss_tensor = Tensor(losses)
-        return self._apply_reduction(loss_tensor)
+        losses = losses.sum(axis=-1)
+        return self._apply_reduction(losses)
 
 def get_loss_function(name: str, **kwargs) -> Loss:
     """Factory function to get loss by name"""

@@ -149,39 +149,65 @@ class Sequential(Model):
         self.metrics = metrics or []
             
     def fit(self, 
-            x: Union[np.ndarray, Tensor],
-            y: Union[np.ndarray, Tensor],
+            x: Union[np.ndarray, Tensor, Any] = None,
+            y: Union[np.ndarray, Tensor] = None,
             epochs: int = 1,
             batch_size: int = 32,
             validation_split: float = 0.0,
-            verbose: bool = True) -> Dict[str, List[float]]:
-        """Train the model"""
-        if not isinstance(x, Tensor):
-            x = Tensor(x)
-        if not isinstance(y, Tensor):
-            y = Tensor(y)
-            
+            verbose: bool = True,
+            shuffle: bool = True) -> Dict[str, List[float]]:
+        """Train the model
+        
+        Args:
+            x: Input data (numpy array, Tensor, or DataLoader)
+            y: Target data (numpy array or Tensor). Not needed if x is a DataLoader.
+            epochs: Number of training epochs
+            batch_size: Batch size (if x is not a DataLoader)
+            validation_split: Fraction of data to use for validation
+            verbose: Whether to print progress
+            shuffle: Whether to shuffle data (if x is not a DataLoader)
+        """
+        from ..data.dataset import DataLoader, TensorDataset
+        
         if self.optimizer is None or self.loss_fn is None:
             raise RuntimeError("Model must be compiled before training. Call model.compile()")
             
-        n_samples = x.shape[0]
-        indices = np.arange(n_samples)
-        
-        # Split validation data if needed
-        x_val, y_val = None, None
-        if validation_split > 0:
-            val_size = int(n_samples * validation_split)
-            train_indices = indices[:-val_size]
-            val_indices = indices[-val_size:]
-            x_val = Tensor(x.data[val_indices])
-            y_val = Tensor(y.data[val_indices])
-            x = Tensor(x.data[train_indices])
-            y = Tensor(y.data[train_indices])
+        # Handle DataLoader input
+        if isinstance(x, DataLoader):
+            train_loader = x
+            x_val, y_val = None, None # Validation split not supported for DataLoader yet
+        else:
+            if not isinstance(x, Tensor):
+                x = Tensor(x)
+            if not isinstance(y, Tensor):
+                y = Tensor(y)
+                
             n_samples = x.shape[0]
+            
+            # Split validation data if needed
+            x_val, y_val = None, None
+            if validation_split > 0:
+                val_size = int(n_samples * validation_split)
+                indices = np.arange(n_samples)
+                if shuffle:
+                    np.random.shuffle(indices)
+                train_indices = indices[:-val_size]
+                val_indices = indices[-val_size:]
+                
+                x_val = Tensor(x.data[val_indices])
+                y_val = Tensor(y.data[val_indices])
+                x_train = Tensor(x.data[train_indices])
+                y_train = Tensor(y.data[train_indices])
+                
+                dataset = TensorDataset(x_train, y_train)
+            else:
+                dataset = TensorDataset(x, y)
+                
+            train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
             
         history: Dict[str, List[float]] = {
             'loss': [],
-            'val_loss': [] if validation_split > 0 else []
+            'val_loss': [] if (validation_split > 0 or x_val is not None) else []
         }
         
         try:
@@ -190,29 +216,17 @@ class Sequential(Model):
                 self.train()
                 epoch_loss = 0.0
                 num_batches = 0
-                  # Shuffle data
-                perm = np.random.permutation(n_samples)
                 
-                for start_idx in range(0, n_samples, batch_size):
-                    end_idx = min(start_idx + batch_size, n_samples)
-                    batch_indices = perm[start_idx:end_idx]
+                for batch in train_loader:
+                    if len(batch) == 2:
+                        x_batch, y_batch = batch
+                    else:
+                        x_batch = batch[0]
+                        y_batch = batch[1] # Assumes last element or similar, but standard is (x, y)
                     
-                    # Create tensors with gradient tracking for inputs
-                    x_batch = Tensor(x.data[batch_indices], requires_grad=False)
-                    y_batch = Tensor(y.data[batch_indices], requires_grad=False)
-                    
-                    # Forward pass - this will connect to model parameters that have requires_grad=True
+                    # Forward pass
                     y_pred = self.forward(x_batch)
                     loss = self.loss_fn(y_pred, y_batch)
-                    
-                    # Ensure loss requires gradients
-                    if not loss.requires_grad:
-                        # This happens when model parameters don't require gradients
-                        for param in self.parameters():
-                            param.requires_grad = True
-                        # Recompute forward pass
-                        y_pred = self.forward(x_batch)
-                        loss = self.loss_fn(y_pred, y_batch)
                     
                     # Backward pass
                     self.optimizer.zero_grad()
@@ -227,7 +241,7 @@ class Sequential(Model):
                 
                 # Validation
                 val_loss = 0.0
-                if validation_split > 0:
+                if x_val is not None:
                     self.eval()
                     val_pred = self.forward(x_val)
                     val_loss = float(self.loss_fn(val_pred, y_val).data)
@@ -236,7 +250,7 @@ class Sequential(Model):
                         
                 if verbose:
                     status = f"Epoch {epoch+1}/{epochs} - loss: {epoch_loss:.4f}"
-                    if validation_split > 0:
+                    if x_val is not None:
                         status += f" - val_loss: {val_loss:.4f}"
                     print(status)
                     

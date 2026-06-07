@@ -2,8 +2,8 @@
 from typing import Dict
 from ...core import Tensor
 from ..layers import (
-    Layer, Linear, Sequential, Conv2d, ConvTranspose2d,
-    BatchNorm2d, Flatten, Reshape
+    Layer, Linear, Sequential, Conv2D, ConvTranspose2D,
+    BatchNorm2D, Flatten, Reshape
 )
 from ..activations import ReLU, LeakyReLU, Tanh, Sigmoid
 from ..loss import binary_cross_entropy
@@ -73,13 +73,13 @@ class DCGAN(GAN):
             Linear(latent_dim, 256 * 7 * 7),
             ReLU(),
             Reshape(-1, 256, 7, 7),
-            ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
-            BatchNorm2d(128),
+            ConvTranspose2D(256, 128, kernel_size=4, stride=2, padding=1),
+            BatchNorm2D(128),
             ReLU(),
-            ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),
-            BatchNorm2d(64),
+            ConvTranspose2D(128, 64, kernel_size=4, stride=2, padding=1),
+            BatchNorm2D(64),
             ReLU(),
-            ConvTranspose2d(64, channels, kernel_size=4, stride=2, padding=1),
+            ConvTranspose2D(64, channels, kernel_size=4, stride=2, padding=1),
             Tanh()
         ])
         
@@ -87,13 +87,13 @@ class DCGAN(GAN):
     def create_discriminator(channels: int = 3) -> Sequential:
         """Create default discriminator architecture"""
         return Sequential([
-            Conv2d(channels, 64, kernel_size=4, stride=2, padding=1),
+            Conv2D(channels, 64, kernel_size=4, stride=2, padding=1),
             LeakyReLU(0.2),
-            Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
-            BatchNorm2d(128),
+            Conv2D(64, 128, kernel_size=4, stride=2, padding=1),
+            BatchNorm2D(128),
             LeakyReLU(0.2),
-            Conv2d(128, 256, kernel_size=4, stride=2, padding=1),
-            BatchNorm2d(256),
+            Conv2D(128, 256, kernel_size=4, stride=2, padding=1),
+            BatchNorm2D(256),
             LeakyReLU(0.2),
             Flatten(),
             Linear(256 * 7 * 7, 1),

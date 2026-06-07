@@ -1,7 +1,7 @@
 """ResNet model implementation"""
 from typing import List
 from ...core import Tensor
-from ..layers import Layer, Conv2d, BatchNorm2d, MaxPool2d, Linear, Sequential, AdaptiveAvgPool2d
+from ..layers import Layer, Conv2D, BatchNorm2D, MaxPool2D, Linear, Sequential, AdaptiveAvgPool2D
 from ..activations import ReLU
 from ..advanced_layers import ResidualBlock
 
@@ -13,10 +13,10 @@ class ResNet(Layer):
             raise ValueError("Supported ResNet layers: 18, 34, 50, 101, 152")
             
         self.in_channels = 64
-        self.conv1 = Conv2d(3, 64, kernel_size=7, stride=2, padding=3)
-        self.bn1 = BatchNorm2d(64)
+        self.conv1 = Conv2D(3, 64, kernel_size=7, stride=2, padding=3)
+        self.bn1 = BatchNorm2D(64)
         self.relu = ReLU()
-        self.maxpool = MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.maxpool = MaxPool2D(kernel_size=3, stride=2, padding=1)
         
         # ResNet configurations
         configs = {
@@ -32,7 +32,7 @@ class ResNet(Layer):
         self.layer3 = self._make_layer(256, configs[num_layers][2], stride=2)
         self.layer4 = self._make_layer(512, configs[num_layers][3], stride=2)
         
-        self.avgpool = AdaptiveAvgPool2d((1, 1))
+        self.avgpool = AdaptiveAvgPool2D((1, 1))
         self.fc = Linear(512, num_classes)
         
     def _make_layer(self, out_channels: int, blocks: int, stride: int = 1) -> Sequential:
